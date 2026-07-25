@@ -174,14 +174,14 @@
       text-shadow: 0 0 15px rgba(255,50,20,.6);
     }
 
-    .charge {
+    .level-progress {
       position: relative;
       height: 3px;
       overflow: visible;
       background: rgba(255,255,255,.1);
     }
 
-    .charge::before, .charge::after {
+    .level-progress::before, .level-progress::after {
       content: "";
       position: absolute;
       top: -3px;
@@ -189,18 +189,18 @@
       height: 9px;
       background: rgba(255,255,255,.3);
     }
-    .charge::before { left: 0; }
-    .charge::after { right: 0; }
+    .level-progress::before { left: 0; }
+    .level-progress::after { right: 0; }
 
-    .charge__fill {
+    .level-progress__fill {
       width: 0%;
       height: 100%;
       background: linear-gradient(90deg, #6962ff, #ddd9ff 55%, #ff3b19);
       box-shadow: 0 0 12px rgba(150, 139, 255, .8);
-      transition: width .06s linear;
+      transition: width .35s cubic-bezier(.16,1,.3,1);
     }
 
-    .charge__labels {
+    .level-progress__labels {
       display: flex;
       justify-content: space-between;
       margin-top: 8px;
@@ -284,11 +284,11 @@
     }
 
     .home {
-      width: min(980px, 100%);
+      width: min(1180px, 100%);
       display: grid;
-      grid-template-columns: minmax(0, 1.35fr) minmax(230px, .75fr);
-      gap: clamp(34px, 7vw, 90px);
-      align-items: end;
+      grid-template-columns: minmax(0, 1fr) minmax(420px, .9fr);
+      gap: clamp(34px, 5vw, 70px);
+      align-items: center;
     }
 
     .home__hero {
@@ -326,7 +326,10 @@
     }
 
     .high-scores {
-      min-height: 300px;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: clamp(18px, 2.5vw, 32px);
       padding: 26px 0 22px 28px;
       border-left: 1px solid rgba(157,149,255,.18);
     }
@@ -337,6 +340,29 @@
       font: 600 9px/1 "Michroma", sans-serif;
       letter-spacing: .34em;
       text-transform: uppercase;
+    }
+
+    .record-group + .record-group {
+      margin-top: 0;
+    }
+
+    .mode-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .mode-note {
+      margin-top: 11px;
+      color: rgba(224,220,255,.4);
+      font-size: 11px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .primary--secondary {
+      border-color: rgba(145,137,255,.58);
+      background: rgba(112,99,255,.08);
     }
 
     .score-list {
@@ -393,6 +419,17 @@
       border: 1px solid rgba(161,153,255,.18);
       clip-path: polygon(0 18px, 18px 0, calc(100% - 65px) 0, 100% 35px, 100% calc(100% - 18px), calc(100% - 18px) 100%, 50px 100%, 0 calc(100% - 45px));
       box-shadow: 0 30px 80px rgba(0,0,0,.55), inset 0 0 55px rgba(75,66,180,.04);
+    }
+
+    .panel__actions {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 26px;
+    }
+
+    .panel__actions .primary {
+      min-width: min(190px, 46%);
     }
 
     .panel::after {
@@ -642,20 +679,87 @@
       .status { bottom: 80px; }
       .edge-actions { right: 50%; transform: translateX(50%); bottom: 18px; }
       .panel { padding: 40px 26px; }
-      .home { grid-template-columns: 1fr; gap: 12px; align-items: center; }
-      .home__hero { padding: 10px 0; }
+      .home-screen { padding: 16px; }
+      .home { grid-template-columns: 1fr; gap: 8px; align-items: center; }
+      .home__hero { padding: 0; }
       .home__title { font-size: clamp(36px, 10.5vw, 52px); }
-      .home__copy { margin: 22px 0 26px; }
-      .high-scores { min-height: 0; padding: 20px 0 0; border-left: 0; border-top: 1px solid rgba(157,149,255,.18); }
-      .score-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 18px; }
+      .home__copy { margin: 14px 0 16px; font-size: 14px; line-height: 1.35; }
+      .home .mode-note { margin-top: 7px; font-size: 9px; }
+      .home .panel__foot { margin-top: 9px; font-size: 9px; }
+      .high-scores {
+        min-height: 0;
+        padding: 12px 0 0;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        border-left: 0;
+        border-top: 1px solid rgba(157,149,255,.18);
+      }
+      .high-scores__title { margin-bottom: 9px; font-size: 8px; }
+      .record-group + .record-group { margin-top: 0; }
+      .score-list li {
+        grid-template-columns: 20px minmax(0, 1fr) auto;
+        gap: 4px;
+        padding: 6px 0;
+      }
+      .score-list__level { font-size: 9px; letter-spacing: .1em; }
+      .score-list__value { font-size: 17px; }
+    }
+
+    @media (max-width: 720px) and (orientation: portrait) {
+      .mode-actions { flex-wrap: nowrap; }
+      .home .primary {
+        min-width: 0;
+        flex: 1;
+        padding: 12px 8px;
+        font-size: 8px;
+        letter-spacing: .14em;
+      }
+    }
+
+    @media (min-width: 721px) and (max-width: 1180px) {
+      .status {
+        left: 24px;
+        bottom: 24px;
+        width: calc(100vw - 238px);
+        transform: none;
+        text-align: left;
+        animation: none;
+      }
+      .status__message { text-align: left; }
+      .edge-actions {
+        right: 24px;
+        bottom: 20px;
+      }
+    }
+
+    @media (min-width: 721px) and (max-width: 1024px) and (orientation: portrait) {
+      .home-screen { padding: 24px; }
+      .home {
+        width: min(720px, 100%);
+        grid-template-columns: 1fr;
+        gap: 22px;
+        align-items: center;
+      }
+      .home__hero { padding: 0; }
+      .mode-actions { flex-wrap: nowrap; }
+      .home .primary {
+        min-width: 0;
+        flex: 1;
+      }
+      .high-scores {
+        padding: 20px 0 0;
+        border-top: 1px solid rgba(157,149,255,.18);
+        border-left: 0;
+      }
     }
 
     @media (max-height: 520px) and (orientation: landscape) {
-      .home-screen { padding: 10px 22px; }
+      .home-screen { padding: 10px 14px; }
       .home {
-        width: min(900px, 100%);
-        grid-template-columns: minmax(0, 1.35fr) minmax(210px, .75fr);
-        gap: clamp(24px, 5vw, 54px);
+        width: min(980px, 100%);
+        grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
+        gap: clamp(18px, 3vw, 30px);
         align-items: center;
       }
       .home__hero { padding: 0; }
@@ -666,23 +770,34 @@
         font-size: 13px;
         line-height: 1.32;
       }
-      .home .primary { min-width: 178px; padding: 11px 20px; font-size: 9px; }
+      .mode-actions { flex-wrap: nowrap; }
+      .home .primary {
+        min-width: 0;
+        flex: 1;
+        padding: 11px 10px;
+        font-size: 8px;
+      }
+      .home .mode-note { margin-top: 6px; font-size: 8px; }
       .home .panel__foot { margin-top: 9px; font-size: 9px; }
       .high-scores {
         min-height: 0;
-        padding: 10px 0 8px 20px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: clamp(12px, 2.5vw, 24px);
+        padding: 10px 0 8px 18px;
         border-top: 0;
         border-left: 1px solid rgba(157,149,255,.18);
       }
       .high-scores__title { margin-bottom: 6px; font-size: 8px; }
+      .record-group + .record-group { margin-top: 0; }
       .score-list { display: block; }
       .score-list li {
-        grid-template-columns: 24px 1fr auto;
-        gap: 7px;
-        padding: 5px 0;
+        grid-template-columns: 19px minmax(0, 1fr) auto;
+        gap: 5px;
+        padding: 4px 0;
       }
-      .score-list__level { font-size: 10px; }
-      .score-list__value { font-size: 18px; }
+      .score-list__level { font-size: 8px; letter-spacing: .06em; }
+      .score-list__value { font-size: 16px; }
       .brand { top: 11px; left: 14px; }
       .brand__title { font-size: 13px; }
       .brand__line { width: 116px; margin-top: 4px; }
@@ -709,7 +824,7 @@
         font-size: 10px;
         text-align: left;
       }
-      .charge__labels { margin-top: 5px; font-size: 7px; }
+      .level-progress__labels { margin-top: 5px; font-size: 7px; }
       .edge-actions { right: 14px; bottom: 10px; transform: none; }
     }
 
@@ -737,17 +852,20 @@
         <span class="metric__value" id="scoreValue">000</span>
       </div>
       <div class="metric">
-        <span class="metric__label">Tries</span>
+        <span class="metric__label" id="thirdMetricLabel">Tries</span>
         <span class="metric__value" id="triesValue">03</span>
       </div>
     </section>
 
     <section class="status">
       <div class="status__message" id="statusMessage">Hold to focus · release to launch</div>
-      <div class="charge" aria-label="Launch charge">
-        <div class="charge__fill" id="chargeFill"></div>
+      <div class="level-progress" aria-label="Level completion">
+        <div class="level-progress__fill" id="levelProgress"></div>
       </div>
-      <div class="charge__labels"><span>Impulse</span><span>Neural lock</span></div>
+      <div class="level-progress__labels">
+        <span>Level progress</span>
+        <span id="progressCount">0 / 1</span>
+      </div>
     </section>
 
     <nav class="edge-actions" aria-label="Game controls">
@@ -767,13 +885,23 @@
     <div class="home">
       <div class="home__hero">
         <h1 class="home__title">Ktarian Game</h1>
-        <p class="home__copy"><strong>Focus your intent.</strong> Hold the pointer to build impulse, aim across the field, then release. Guide every disc into a violet aperture.</p>
-        <button class="primary" id="startButton">Initiate link</button>
+        <p class="home__copy"><strong>Focus your intent.</strong> Hold the pointer to build impulse, aim across the field, then release. Guide every disc into a violet cone.</p>
+        <div class="mode-actions">
+          <button class="primary" id="startButton">Play game</button>
+          <button class="primary primary--secondary" id="timedButton">Timed mode</button>
+        </div>
+        <div class="mode-note">Timed mode · start at 90 · hits +2 · misses −5</div>
         <div class="panel__foot">Mouse / touch · Space to charge · Esc to disengage</div>
       </div>
-      <aside class="high-scores" aria-labelledby="highScoresTitle">
-        <h2 class="high-scores__title" id="highScoresTitle">Neural records</h2>
-        <ol class="score-list" id="scoreList"></ol>
+      <aside class="high-scores" aria-label="Game records">
+        <section class="record-group" aria-labelledby="highScoresTitle">
+          <h2 class="high-scores__title" id="highScoresTitle">Game records</h2>
+          <ol class="score-list" id="scoreList"></ol>
+        </section>
+        <section class="record-group" aria-labelledby="timedScoresTitle">
+          <h2 class="high-scores__title" id="timedScoresTitle">Timed records</h2>
+          <ol class="score-list" id="timedScoreList"></ol>
+        </section>
       </aside>
     </div>
   </section>
@@ -783,7 +911,10 @@
       <p class="panel__kicker" id="endKicker">Neural link interrupted</p>
       <h1 id="endTitle">Released</h1>
       <p class="panel__copy" id="endCopy">The optical burst has cleared the pattern.</p>
-      <button class="primary" id="againButton">Re-enter game</button>
+      <div class="panel__actions">
+        <button class="primary" id="againButton">Play again</button>
+        <button class="primary primary--secondary" id="homeButton" hidden>Main screen</button>
+      </div>
     </div>
   </section>
 
@@ -807,8 +938,10 @@
       level: document.querySelector('#levelValue'),
       score: document.querySelector('#scoreValue'),
       tries: document.querySelector('#triesValue'),
+      thirdMetricLabel: document.querySelector('#thirdMetricLabel'),
       message: document.querySelector('#statusMessage'),
-      charge: document.querySelector('#chargeFill'),
+      progress: document.querySelector('#levelProgress'),
+      progressCount: document.querySelector('#progressCount'),
       startOverlay: document.querySelector('#startOverlay'),
       endOverlay: document.querySelector('#endOverlay'),
       endKicker: document.querySelector('#endKicker'),
@@ -816,7 +949,8 @@
       endCopy: document.querySelector('#endCopy'),
       burst: document.querySelector('#opticalBurst'),
       sound: document.querySelector('#soundButton'),
-      scoreList: document.querySelector('#scoreList')
+      scoreList: document.querySelector('#scoreList'),
+      timedScoreList: document.querySelector('#timedScoreList')
     };
 
     let renderer;
@@ -844,15 +978,16 @@
 
     function configureCamera() {
       const aspect = innerWidth / innerHeight;
-      const portraitMobile = innerWidth <= 720 && aspect <= 1;
+      const portraitPhone = innerWidth <= 720 && aspect <= 1;
+      const portraitTablet = innerWidth > 720 && innerWidth <= 1024 && aspect <= 1;
       const compactLandscape = innerHeight <= 540 && aspect > 1.25;
       camera.aspect = aspect;
-      camera.zoom = portraitMobile ? 1.16 : compactLandscape ? 1.42 : 1;
-      camera.fov = portraitMobile ? 48 : 40;
+      camera.zoom = compactLandscape ? 1.42 : 1;
+      camera.fov = portraitPhone ? 52 : portraitTablet ? 44 : 40;
       camera.position.set(
         0,
-        portraitMobile ? 12.3 : 11.2,
-        portraitMobile ? 17.2 : 15.8
+        portraitPhone ? 13.2 : portraitTablet ? 12.2 : 11.2,
+        portraitPhone ? 21.5 : portraitTablet ? 18.5 : 15.8
       );
       camera.lookAt(0, .35, -1.4);
       camera.updateProjectionMatrix();
@@ -885,6 +1020,10 @@
       level: 1,
       score: 0,
       tries: 3,
+      mode: 'classic',
+      timeRemaining: 90,
+      timerExpired: false,
+      displayedTime: 90,
       targets: [],
       discs: [],
       activeDisc: null,
@@ -904,9 +1043,9 @@
     {
       const count = 4800;
       const tiers = [
-        { positions: [], colors: [], size: .145, opacity: 1 },
-        { positions: [], colors: [], size: .235, opacity: 1 },
-        { positions: [], colors: [], size: .38, opacity: 1 }
+        { positions: [], colors: [], size: .165, opacity: 1 },
+        { positions: [], colors: [], size: .27, opacity: 1 },
+        { positions: [], colors: [], size: .44, opacity: 1 }
       ];
       const starCanvas = document.createElement('canvas');
       starCanvas.width = starCanvas.height = 64;
@@ -930,8 +1069,8 @@
           -depth
         );
         const brightnessRoll = Math.pow(Math.random(), 1.7);
-        const tierLift = tier === tiers[2] ? .08 : tier === tiers[1] ? .035 : 0;
-        const starLightness = .7 + brightnessRoll * .28 + tierLift;
+        const tierLift = tier === tiers[2] ? .1 : tier === tiers[1] ? .045 : 0;
+        const starLightness = .74 + brightnessRoll * .25 + tierLift;
         c.setHSL(
           .6 + Math.random() * .1,
           .18 + Math.random() * .32,
@@ -1310,7 +1449,7 @@
       const body = new THREE.Mesh(
         new THREE.LatheGeometry(profile, 64),
         new THREE.MeshStandardMaterial({
-          color: 0x8e130c, emissive: 0xff260f, emissiveIntensity: .9,
+          color: 0x5d0907, emissive: 0xa9120b, emissiveIntensity: .62,
           roughness: .3, metalness: .18
         })
       );
@@ -1324,7 +1463,7 @@
         const band = new THREE.Mesh(
           new THREE.CircleGeometry(radius, 64),
           new THREE.MeshBasicMaterial({
-            color: pink ? 0xffa99a : 0xb91f12,
+            color: pink ? 0xc36f69 : 0x7b100c,
             transparent: true,
             opacity: pink ? .98 : .96
           })
@@ -1338,7 +1477,7 @@
       const sheen = new THREE.Mesh(
         new THREE.CircleGeometry(.74, 64),
         new THREE.MeshBasicMaterial({
-          color: 0xff6048, transparent: true, opacity: .1,
+          color: 0xa7271d, transparent: true, opacity: .08,
           blending: THREE.AdditiveBlending, depthWrite: false
         })
       );
@@ -1346,7 +1485,7 @@
       sheen.position.y = .16;
       sheen.renderOrder = 10;
       group.add(sheen);
-      const halo = new THREE.PointLight(0xff351c, 3, 5, 2);
+      const halo = new THREE.PointLight(0xa51b12, 2.2, 4.5, 2);
       halo.position.y = .3;
       group.add(halo);
       return group;
@@ -1401,14 +1540,27 @@
     function updateHUD() {
       ui.level.textContent = String(state.level).padStart(2, '0');
       ui.score.textContent = String(state.score).padStart(3, '0');
-      ui.tries.textContent = String(state.tries).padStart(2, '0');
+      const timed = state.mode === 'timed';
+      ui.thirdMetricLabel.textContent = timed ? 'Time' : 'Tries';
+      ui.tries.textContent = timed
+        ? String(Math.max(0, Math.ceil(state.timeRemaining))).padStart(2, '0')
+        : String(state.tries).padStart(2, '0');
+      const quota = Math.max(1, state.levelQuota);
+      const completed = Math.min(state.levelHits, quota);
+      ui.progress.style.width = `${completed / quota * 100}%`;
+      ui.progressCount.textContent = `${completed} / ${quota}`;
     }
 
-    const scoreStorageKey = 'ktarian-high-scores-v1';
+    const scoreStorageKeys = {
+      classic: 'ktarian-high-scores-v1',
+      timed: 'ktarian-timed-high-scores-v1'
+    };
 
-    function loadHighScores() {
+    function loadHighScores(mode = 'classic') {
       try {
-        const scores = JSON.parse(localStorage.getItem(scoreStorageKey) || '[]');
+        const scores = JSON.parse(
+          localStorage.getItem(scoreStorageKeys[mode]) || '[]'
+        );
         return Array.isArray(scores)
           ? scores.filter(entry => Number.isFinite(entry?.score) && Number.isFinite(entry?.level)).slice(0, 5)
           : [];
@@ -1417,14 +1569,13 @@
       }
     }
 
-    function renderHighScores() {
-      const scores = loadHighScores();
-      ui.scoreList.replaceChildren();
+    function renderScoreList(list, scores) {
+      list.replaceChildren();
       if (!scores.length) {
         const empty = document.createElement('li');
         empty.className = 'score-list__empty';
-        empty.textContent = 'No patterns recorded';
-        ui.scoreList.append(empty);
+        empty.textContent = 'No games recorded';
+        list.append(empty);
         return;
       }
       scores.forEach(entry => {
@@ -1436,18 +1587,26 @@
         level.textContent = `Level ${entry.level}`;
         value.textContent = String(entry.score).padStart(4, '0');
         item.append(level, value);
-        ui.scoreList.append(item);
+        list.append(item);
       });
+    }
+
+    function renderHighScores() {
+      renderScoreList(ui.scoreList, loadHighScores('classic'));
+      renderScoreList(ui.timedScoreList, loadHighScores('timed'));
     }
 
     function recordHighScore() {
       if (state.scoreRecorded || state.score <= 0) return;
       state.scoreRecorded = true;
-      const scores = loadHighScores();
+      const scores = loadHighScores(state.mode);
       scores.push({ score: state.score, level: state.level });
       scores.sort((a, b) => b.score - a.score || b.level - a.level);
       try {
-        localStorage.setItem(scoreStorageKey, JSON.stringify(scores.slice(0, 5)));
+        localStorage.setItem(
+          scoreStorageKeys[state.mode],
+          JSON.stringify(scores.slice(0, 5))
+        );
       } catch {}
       renderHighScores();
     }
@@ -1484,10 +1643,29 @@
     }
 
     function availableHole(maxRow = 3) {
-      const occupied = state.targets.map(t => t.userData.holeIndex);
+      const occupiedIndices = new Set(
+        state.targets.map(target => target.userData.holeIndex)
+      );
+      const occupiedHoles = state.targets
+        .map(target => holes[target.userData.holeIndex])
+        .filter(Boolean);
       const options = holes
         .map((h, i) => ({ h, i }))
-        .filter(({ h, i }) => h.row <= maxRow && !occupied.includes(i) && !(h.row === 3 && h.col === 3));
+        .filter(({ h, i }) => {
+          if (
+            h.row > maxRow ||
+            occupiedIndices.has(i) ||
+            (h.row === 3 && h.col === 3)
+          ) return false;
+
+          return occupiedHoles.every(existing => {
+            const sameColumn = h.col === existing.col;
+            const horizontalNeighbor =
+              h.row === existing.row &&
+              Math.abs(h.col - existing.col) === 1;
+            return !sameColumn && !horizontalNeighbor;
+          });
+        });
       return options[Math.floor(Math.random() * options.length)];
     }
 
@@ -1623,11 +1801,11 @@
       if (freshStart) clearObjects();
       state.tries = 3;
       state.transitioning = false;
-      updateHUD();
       const count = Math.min(state.level, 3);
       state.levelHits = 0;
       state.levelQuota = state.level;
       state.levelConesIssued = count;
+      updateHUD();
       const generation = state.generation;
       for (let i = 0; i < count; i++) {
         const coneDelay = i === 0
@@ -1636,7 +1814,7 @@
         spawnCone(coneDelay, generation);
       }
       updateSceneMetrics();
-      message(`Level ${state.level} · ${state.levelQuota} aperture${state.levelQuota > 1 ? 's' : ''} detected`);
+      message(`Level ${state.level} · ${state.levelQuota} cone${state.levelQuota > 1 ? 's' : ''} detected`);
       for (let i = 0; i < count; i++) {
         const discDelay = i === 0
           ? randomDelay(380, 720)
@@ -1649,10 +1827,12 @@
       state.level = 1;
       state.score = 0;
       state.tries = 3;
+      state.timeRemaining = 90;
+      state.timerExpired = false;
+      state.displayedTime = 90;
       state.scoreRecorded = false;
       state.charge = 0;
       state.charging = false;
-      ui.charge.style.width = '0%';
       updateHUD();
       if (state.started) {
         state.playing = true;
@@ -1660,7 +1840,8 @@
       }
     }
 
-    function startGame() {
+    function startGame(mode = 'classic') {
+      state.mode = mode;
       state.started = true;
       state.playing = true;
       document.body.classList.remove('home-active');
@@ -1803,7 +1984,6 @@
       updateSceneMetrics();
       reticle.visible = false;
       aimLine.visible = false;
-      ui.charge.style.width = '0%';
       message(target ? 'Trajectory locked' : 'Trajectory committed');
       tone(230, .42, 'sawtooth', .027, 260);
     }
@@ -1819,8 +1999,17 @@
         const levelCleared = state.levelHits >= state.levelQuota;
         updateSceneMetrics();
         state.score += 100 * state.level;
+        if (state.mode === 'timed') {
+          state.timeRemaining += 2;
+          state.displayedTime = Math.ceil(state.timeRemaining);
+        }
         updateHUD();
-        message('Pattern accepted', 'hit');
+        message(
+          state.mode === 'timed'
+            ? 'Pattern accepted · 2 seconds added'
+            : 'Pattern accepted',
+          'hit'
+        );
         tone(440, .16, 'sine', .04, 330);
         setTimeout(() => tone(660, .35, 'sine', .028, 280), 100);
         setTimeout(() => {
@@ -1835,15 +2024,27 @@
           spawnDisc(randomDelay(700, 1200), state.generation);
         }
       } else {
-        state.tries--;
         updateSceneMetrics();
-        updateHUD();
-        message('Pattern rejected', 'miss');
         tone(150, .5, 'square', .025, -70);
-        if (state.tries <= 0) {
-          setTimeout(gameOver, 650);
+        if (state.mode === 'timed') {
+          state.timeRemaining = Math.max(0, state.timeRemaining - 5);
+          state.displayedTime = Math.ceil(state.timeRemaining);
+          updateHUD();
+          message('Pattern rejected · 5 second penalty', 'miss');
+          if (state.timeRemaining <= 0) {
+            setTimeout(expireTimedGame, 450);
+          } else {
+            spawnDisc(randomDelay(420, 1500), state.generation);
+          }
         } else {
-          spawnDisc(randomDelay(420, 1500), state.generation);
+          state.tries--;
+          updateHUD();
+          message('Pattern rejected', 'miss');
+          if (state.tries <= 0) {
+            setTimeout(gameOver, 650);
+          } else {
+            spawnDisc(randomDelay(420, 1500), state.generation);
+          }
         }
       }
     }
@@ -1864,10 +2065,23 @@
       state.playing = false;
       recordHighScore();
       clearObjects();
-      ui.endKicker.textContent = 'Pattern rejected';
-      ui.endTitle.textContent = 'Link Lost';
-      ui.endCopy.textContent = `You reached level ${state.level} with a score of ${state.score}. Recalibrate and try the sequence again.`;
+      const timed = state.mode === 'timed';
+      ui.endKicker.textContent = timed ? 'Time elapsed' : 'Pattern rejected';
+      ui.endTitle.textContent = timed ? 'Time Up' : 'Link Lost';
+      ui.endCopy.textContent = timed
+        ? `You reached level ${state.level} and scored ${state.score} before time expired.`
+        : `You reached level ${state.level} with a score of ${state.score}. Recalibrate and try the sequence again.`;
+      document.querySelector('#homeButton').hidden = !timed;
       ui.endOverlay.hidden = false;
+    }
+
+    function expireTimedGame() {
+      if (state.timerExpired || state.mode !== 'timed') return;
+      state.timerExpired = true;
+      state.timeRemaining = 0;
+      state.displayedTime = 0;
+      updateHUD();
+      gameOver();
     }
 
     function exitGame() {
@@ -1875,7 +2089,6 @@
       state.playing = false;
       state.charging = false;
       recordHighScore();
-      ui.charge.style.width = '0%';
       ui.burst.classList.remove('active');
       void ui.burst.offsetWidth;
       ui.burst.classList.add('active');
@@ -1911,7 +2124,6 @@
     renderer.domElement.addEventListener('pointercancel', () => {
       state.charging = false;
       state.charge = .04;
-      ui.charge.style.width = '0%';
     });
     renderer.domElement.addEventListener('contextmenu', event => event.preventDefault());
 
@@ -1930,8 +2142,10 @@
       }
     });
 
-    document.querySelector('#startButton').addEventListener('click', startGame);
-    document.querySelector('#againButton').addEventListener('click', startGame);
+    document.querySelector('#startButton').addEventListener('click', () => startGame('classic'));
+    document.querySelector('#timedButton').addEventListener('click', () => startGame('timed'));
+    document.querySelector('#againButton').addEventListener('click', () => startGame(state.mode));
+    document.querySelector('#homeButton').addEventListener('click', exitGame);
     document.querySelector('#restartButton').addEventListener('click', resetGame);
     document.querySelector('#exitButton').addEventListener('click', exitGame);
     ui.burst.addEventListener('animationend', event => {
@@ -1957,6 +2171,16 @@
       requestAnimationFrame(animate);
       const dt = Math.min(clock.getDelta(), .04);
       const time = clock.elapsedTime;
+
+      if (state.playing && state.mode === 'timed' && !state.timerExpired) {
+        state.timeRemaining = Math.max(0, state.timeRemaining - dt);
+        const displayedTime = Math.ceil(state.timeRemaining);
+        if (displayedTime !== state.displayedTime) {
+          state.displayedTime = displayedTime;
+          updateHUD();
+        }
+        if (state.timeRemaining <= 0) expireTimedGame();
+      }
 
       state.stars.rotation.z = Math.sin(time * .025) * .004;
       state.stars.position.x = Math.sin(time * .018) * .22;
@@ -2089,7 +2313,6 @@
         const phase = elapsed % 2;
         const triangle = phase <= 1 ? phase : 2 - phase;
         state.charge = .04 + triangle * .96;
-        ui.charge.style.width = `${state.charge * 100}%`;
         if (state.activeDisc) {
           state.activeDisc.scale.setScalar(state.activeDisc.userData.baseScale * (1 + state.charge * .075));
         }
