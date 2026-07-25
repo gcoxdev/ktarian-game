@@ -1,0 +1,2164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#03030a">
+  <link rel="icon" href="data:,">
+  <title>Ktarian Game</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Michroma&family=Rajdhani:wght@400;500;600;700&display=swap');
+
+    :root {
+      color-scheme: dark;
+      --ember: #ff3b19;
+      --ember-hot: #ffd0b2;
+      --violet: #7772ff;
+      --ink: #03030a;
+      --glass: rgba(8, 8, 24, .54);
+      --line: rgba(173, 168, 255, .2);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--ink);
+      font-family: "Rajdhani", sans-serif;
+      user-select: none;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 5;
+      background:
+        radial-gradient(ellipse at 18% 24%, rgba(82, 70, 170, .045), transparent 32%),
+        radial-gradient(ellipse at 78% 72%, rgba(133, 42, 35, .025), transparent 38%),
+        linear-gradient(90deg, rgba(255, 30, 0, .018), transparent 20%, transparent 80%, rgba(95, 80, 255, .02));
+      mix-blend-mode: screen;
+    }
+
+    #stage {
+      position: fixed;
+      inset: 0;
+      cursor: crosshair;
+      touch-action: none;
+      transition: opacity .45s ease;
+    }
+
+    canvas { display: block; width: 100%; height: 100%; }
+
+    .chrome {
+      position: fixed;
+      inset: 0;
+      z-index: 6;
+      pointer-events: none;
+      color: #f4f1ff;
+      transition: opacity .35s ease;
+    }
+
+    body.home-active #stage,
+    body.home-active .chrome {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .brand {
+      position: absolute;
+      left: clamp(18px, 3.2vw, 58px);
+      top: clamp(18px, 4.4vh, 48px);
+      display: grid;
+      gap: 4px;
+      animation: arrive .9s cubic-bezier(.16,1,.3,1) both;
+    }
+
+    .brand__eyebrow {
+      color: rgba(230, 226, 255, .52);
+      font: 600 10px/1 "Michroma", sans-serif;
+      letter-spacing: .42em;
+      text-transform: uppercase;
+    }
+
+    .brand__title {
+      margin: 0;
+      font: 400 clamp(20px, 2.4vw, 36px)/1 "Michroma", sans-serif;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      text-shadow: 0 0 28px rgba(117, 104, 255, .38);
+    }
+
+    .brand__line {
+      width: min(330px, 68vw);
+      height: 1px;
+      margin-top: 8px;
+      background: linear-gradient(90deg, var(--ember), rgba(255,62,25,.07));
+      box-shadow: 0 0 9px rgba(255,60,25,.6);
+    }
+
+    .metrics {
+      position: absolute;
+      top: clamp(20px, 4.4vh, 50px);
+      right: clamp(18px, 3.2vw, 58px);
+      display: flex;
+      gap: clamp(17px, 3vw, 48px);
+      text-align: right;
+      animation: arrive .9s .1s cubic-bezier(.16,1,.3,1) both;
+    }
+
+    .metric {
+      position: relative;
+      min-width: 58px;
+    }
+
+    .metric::before {
+      content: "";
+      position: absolute;
+      top: 3px;
+      right: -10px;
+      width: 3px;
+      height: 22px;
+      border-radius: 3px;
+      background: var(--violet);
+      box-shadow: 0 0 10px var(--violet);
+    }
+
+    .metric__label {
+      display: block;
+      color: rgba(221, 217, 255, .46);
+      font: 600 9px/1 "Michroma", sans-serif;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+    }
+
+    .metric__value {
+      display: block;
+      margin-top: 5px;
+      font: 600 25px/.9 "Rajdhani", sans-serif;
+      letter-spacing: .06em;
+    }
+
+    .status {
+      position: absolute;
+      left: 50%;
+      bottom: clamp(28px, 5vh, 58px);
+      width: min(640px, calc(100vw - 36px));
+      transform: translateX(-50%);
+      text-align: center;
+      animation: status-arrive .9s .22s cubic-bezier(.16,1,.3,1) both;
+    }
+
+    .status__message {
+      min-height: 24px;
+      margin-bottom: 12px;
+      color: rgba(240, 237, 255, .75);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: .23em;
+      text-transform: uppercase;
+      transition: color .2s, text-shadow .2s;
+    }
+
+    .status__message[data-tone="hit"] {
+      color: #fff;
+      text-shadow: 0 0 18px rgba(151,145,255,.85);
+    }
+
+    .status__message[data-tone="miss"] {
+      color: #ff9d80;
+      text-shadow: 0 0 15px rgba(255,50,20,.6);
+    }
+
+    .charge {
+      position: relative;
+      height: 3px;
+      overflow: visible;
+      background: rgba(255,255,255,.1);
+    }
+
+    .charge::before, .charge::after {
+      content: "";
+      position: absolute;
+      top: -3px;
+      width: 1px;
+      height: 9px;
+      background: rgba(255,255,255,.3);
+    }
+    .charge::before { left: 0; }
+    .charge::after { right: 0; }
+
+    .charge__fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #6962ff, #ddd9ff 55%, #ff3b19);
+      box-shadow: 0 0 12px rgba(150, 139, 255, .8);
+      transition: width .06s linear;
+    }
+
+    .charge__labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+      color: rgba(226,222,255,.36);
+      font: 600 8px/1 "Michroma", sans-serif;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+    }
+
+    .edge-actions {
+      position: absolute;
+      right: clamp(18px, 3.2vw, 58px);
+      bottom: clamp(22px, 4vh, 44px);
+      display: flex;
+      gap: 12px;
+      pointer-events: auto;
+    }
+
+    .icon-button {
+      width: 42px;
+      height: 42px;
+      border: 1px solid rgba(164,156,255,.2);
+      border-radius: 50%;
+      color: rgba(231,228,255,.62);
+      background: rgba(8,8,24,.36);
+      backdrop-filter: blur(8px);
+      cursor: pointer;
+      transition: border-color .2s, color .2s, transform .2s, box-shadow .2s;
+    }
+
+    .icon-button:hover, .icon-button:focus-visible {
+      color: white;
+      border-color: rgba(180,173,255,.7);
+      box-shadow: 0 0 20px rgba(103,93,255,.18);
+      transform: translateY(-2px);
+      outline: none;
+    }
+
+    .icon-button svg { width: 17px; height: 17px; vertical-align: middle; }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 12;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      color: #f5f2ff;
+      background: radial-gradient(circle at 50% 44%, rgba(37,30,94,.3), rgba(3,3,10,.88) 56%, #03030a);
+      backdrop-filter: blur(8px);
+      transition: opacity .55s ease, visibility .55s;
+    }
+
+    .overlay[hidden] {
+      display: grid;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .home-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 14;
+      display: grid;
+      place-items: center;
+      padding: clamp(22px, 5vw, 72px);
+      color: #f5f2ff;
+      background:
+        radial-gradient(circle at 73% 36%, rgba(84, 72, 190, .18), transparent 28%),
+        radial-gradient(circle at 18% 78%, rgba(180, 45, 25, .1), transparent 32%),
+        #03030a;
+      transition: opacity .55s ease, visibility .55s;
+    }
+
+    .home-screen[hidden] {
+      display: grid;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .home {
+      width: min(980px, 100%);
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(230px, .75fr);
+      gap: clamp(34px, 7vw, 90px);
+      align-items: end;
+    }
+
+    .home__hero {
+      position: relative;
+      min-width: 0;
+      padding: clamp(28px, 4vw, 54px) 0;
+    }
+
+    .home__hero::before {
+      content: "";
+      position: absolute;
+      left: -8vw;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: linear-gradient(transparent, rgba(130,121,255,.7), var(--ember), transparent);
+      box-shadow: 0 0 24px rgba(119,110,255,.5);
+    }
+
+    .home__title {
+      margin: 0;
+      font: 400 clamp(40px, 5.2vw, 64px)/.95 "Michroma", sans-serif;
+      letter-spacing: .035em;
+      text-transform: uppercase;
+      text-shadow: 0 0 60px rgba(111,99,255,.3);
+    }
+
+    .home__copy {
+      max-width: 600px;
+      margin: 30px 0 34px;
+      color: rgba(233,229,255,.62);
+      font-size: clamp(16px, 2vw, 19px);
+      line-height: 1.55;
+      letter-spacing: .035em;
+    }
+
+    .high-scores {
+      min-height: 300px;
+      padding: 26px 0 22px 28px;
+      border-left: 1px solid rgba(157,149,255,.18);
+    }
+
+    .high-scores__title {
+      margin: 0 0 22px;
+      color: #9189ff;
+      font: 600 9px/1 "Michroma", sans-serif;
+      letter-spacing: .34em;
+      text-transform: uppercase;
+    }
+
+    .score-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: score-rank;
+    }
+
+    .score-list li {
+      counter-increment: score-rank;
+      display: grid;
+      grid-template-columns: 28px 1fr auto;
+      gap: 10px;
+      align-items: baseline;
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(161,153,255,.1);
+    }
+
+    .score-list li::before {
+      content: counter(score-rank, decimal-leading-zero);
+      color: rgba(224,220,255,.28);
+      font: 500 10px/1 "Michroma", sans-serif;
+    }
+
+    .score-list__level {
+      color: rgba(229,225,255,.48);
+      font-size: 12px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+
+    .score-list__value {
+      color: #fff;
+      font: 600 24px/1 "Rajdhani", sans-serif;
+      letter-spacing: .06em;
+    }
+
+    .score-list__empty {
+      color: rgba(229,225,255,.38);
+      font-size: 13px;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+    }
+
+    .panel {
+      position: relative;
+      width: min(650px, 100%);
+      padding: clamp(34px, 6vw, 68px);
+      text-align: center;
+      background:
+        linear-gradient(135deg, rgba(121,110,255,.08), transparent 35%),
+        rgba(7,7,19,.64);
+      border: 1px solid rgba(161,153,255,.18);
+      clip-path: polygon(0 18px, 18px 0, calc(100% - 65px) 0, 100% 35px, 100% calc(100% - 18px), calc(100% - 18px) 100%, 50px 100%, 0 calc(100% - 45px));
+      box-shadow: 0 30px 80px rgba(0,0,0,.55), inset 0 0 55px rgba(75,66,180,.04);
+    }
+
+    .panel::after {
+      content: "";
+      position: absolute;
+      left: 10%;
+      right: 10%;
+      bottom: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--ember), transparent);
+      box-shadow: 0 0 15px rgba(255,56,22,.8);
+    }
+
+    .panel__kicker {
+      margin: 0 0 18px;
+      color: #8c83ff;
+      font: 600 9px/1 "Michroma", sans-serif;
+      letter-spacing: .42em;
+      text-transform: uppercase;
+    }
+
+    .panel h1 {
+      margin: 0;
+      font: 400 clamp(32px, 7vw, 68px)/1 "Michroma", sans-serif;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      text-shadow: 0 0 50px rgba(111,99,255,.35);
+    }
+
+    .panel__copy {
+      max-width: 460px;
+      margin: 24px auto 30px;
+      color: rgba(233,229,255,.64);
+      font-size: clamp(15px, 2vw, 18px);
+      line-height: 1.55;
+      letter-spacing: .04em;
+    }
+
+    .panel__copy strong { color: white; font-weight: 600; }
+
+    .primary {
+      position: relative;
+      min-width: 205px;
+      padding: 15px 28px;
+      border: 1px solid rgba(255,89,50,.65);
+      color: white;
+      background: rgba(255,50,20,.08);
+      font: 600 10px/1 "Michroma", sans-serif;
+      letter-spacing: .28em;
+      text-transform: uppercase;
+      cursor: pointer;
+      overflow: hidden;
+      transition: background .2s, box-shadow .2s, transform .2s;
+    }
+
+    .primary::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      transform: translateX(-105%);
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.16), transparent);
+      transition: transform .45s;
+    }
+
+    .primary:hover, .primary:focus-visible {
+      background: rgba(255,50,20,.16);
+      box-shadow: 0 0 25px rgba(255,55,20,.18);
+      transform: translateY(-2px);
+      outline: none;
+    }
+    .primary:hover::before { transform: translateX(105%); }
+
+    .panel__foot {
+      margin-top: 22px;
+      color: rgba(224,220,255,.34);
+      font: 500 11px/1.5 "Rajdhani", sans-serif;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+    }
+
+    .optical-burst {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      pointer-events: none;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      opacity: 0;
+      perspective: 1000px;
+      background: rgba(0, 0, 0, .58);
+    }
+
+    .optical-burst.active { opacity: 1; }
+
+    .burst-device {
+      --device-depth: clamp(95px, 12vw, 145px);
+      position: relative;
+      width: clamp(150px, 18vw, 220px);
+      aspect-ratio: 1;
+      opacity: 1;
+      transform-style: preserve-3d;
+      transform: translate3d(42vw, 12vh, 100px) rotateX(-7deg) rotateY(-24deg) rotateZ(8deg) scale(.72);
+    }
+
+    .burst-face {
+      position: absolute;
+      display: block;
+      transform-style: preserve-3d;
+      border: 3px solid #111318;
+    }
+
+    .burst-face--front {
+      inset: 0;
+      transform: translateZ(calc(var(--device-depth) / 2));
+      background:
+        linear-gradient(145deg, rgba(255,255,255,.18), transparent 18%),
+        linear-gradient(135deg, #77797d, #24262a 46%, #0b0c0f);
+      box-shadow: 0 28px 65px rgba(0,0,0,.72), inset 0 0 0 3px rgba(210,215,220,.12);
+    }
+
+    .burst-face--right {
+      top: 0;
+      left: 50%;
+      width: var(--device-depth);
+      height: 100%;
+      margin-left: calc(var(--device-depth) / -2);
+      transform: rotateY(90deg) translateZ(clamp(75px, 9vw, 110px));
+      background: linear-gradient(90deg, #181a1e, #08090b);
+      box-shadow: inset 10px 0 18px rgba(255,255,255,.035);
+    }
+
+    .burst-face--top {
+      left: 0;
+      top: 50%;
+      width: 100%;
+      height: var(--device-depth);
+      margin-top: calc(var(--device-depth) / -2);
+      transform: rotateX(90deg) translateZ(clamp(75px, 9vw, 110px));
+      background: linear-gradient(#55585d, #17191d);
+      box-shadow: inset 0 -12px 22px rgba(0,0,0,.28);
+    }
+
+    .burst-lens {
+      position: absolute;
+      z-index: 2;
+      inset: 5%;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 48% 48%, #302921 0 5%, #716856 8%, #17191c 21%, #555b60 31%, #17191d 45%, #050609 60%, #22262a 71%, #08090b 76%);
+      border: clamp(8px, 1.2vw, 15px) solid #bbbcc0;
+      box-shadow:
+        0 0 0 4px #15171a,
+        inset 0 0 25px #000,
+        0 4px 15px rgba(0,0,0,.7);
+    }
+
+    .burst-lens::after {
+      content: "";
+      position: absolute;
+      inset: 7%;
+      border-radius: 50%;
+      opacity: 0;
+      background: #fff;
+      box-shadow: 0 0 30px 15px #fff, 0 0 100px 45px rgba(255,255,255,.9);
+    }
+
+    .burst-flash {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      opacity: 0;
+      background: #fff;
+    }
+
+    .optical-burst.active .burst-device {
+      animation: device-arrive 1.75s cubic-bezier(.16,.76,.22,1) both;
+    }
+
+    .optical-burst.active .burst-lens::after {
+      animation: lens-flash 1.08s .34s steps(1) both;
+    }
+
+    .optical-burst.active .burst-flash {
+      animation: optical 1.08s .34s steps(1) both;
+    }
+
+    .unsupported {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: none;
+      place-items: center;
+      padding: 30px;
+      color: white;
+      text-align: center;
+      background: #05050d;
+      font: 500 18px/1.5 "Rajdhani", sans-serif;
+    }
+
+    @keyframes arrive {
+      from { opacity: 0; transform: translateY(-12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes status-arrive {
+      from { opacity: 0; transform: translate(-50%, -12px); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+
+    @keyframes optical {
+      0%, 4%, 8%, 12%, 27%, 44%, 61%, 72%, 79%, 86%, 93%, 100% { opacity: 0; }
+      2%, 6%, 10% { opacity: .92; }
+      21%, 38%, 55% { opacity: .96; }
+      69%, 76%, 83%, 90%, 97% { opacity: 1; }
+    }
+
+    @keyframes lens-flash {
+      0%, 4%, 8%, 12%, 27%, 44%, 61%, 72%, 79%, 86%, 93%, 100% { opacity: 0; }
+      2%, 6%, 10%, 21%, 38%, 55%, 69%, 76%, 83%, 90%, 97% { opacity: 1; }
+    }
+
+    @keyframes device-arrive {
+      0% { transform: translate3d(42vw, 12vh, 100px) rotateX(-7deg) rotateY(-24deg) rotateZ(8deg) scale(.72); }
+      24%, 84% { transform: translate3d(0, 0, 0) rotateX(-7deg) rotateY(-18deg) rotateZ(2deg) scale(1); }
+      100% { transform: translate3d(-8vw, -3vh, 50px) rotateX(-7deg) rotateY(-13deg) rotateZ(-2deg) scale(1.06); }
+    }
+
+    @media (max-width: 720px) {
+      .brand__eyebrow { display: none; }
+      .brand { top: 14px; left: 14px; }
+      .brand__title { font-size: 14px; letter-spacing: .08em; }
+      .brand__line { width: 128px; margin-top: 5px; }
+      .metrics {
+        top: 54px;
+        left: 14px;
+        right: 14px;
+        justify-content: space-between;
+        gap: 12px;
+        text-align: left;
+      }
+      .metric { min-width: 0; flex: 1; }
+      .metric::before { left: -7px; right: auto; }
+      .metric__label { font-size: 7px; }
+      .metric__value { font-size: 20px; }
+      .metric::before { height: 17px; }
+      .status { bottom: 80px; }
+      .edge-actions { right: 50%; transform: translateX(50%); bottom: 18px; }
+      .panel { padding: 40px 26px; }
+      .home { grid-template-columns: 1fr; gap: 12px; align-items: center; }
+      .home__hero { padding: 10px 0; }
+      .home__title { font-size: clamp(36px, 10.5vw, 52px); }
+      .home__copy { margin: 22px 0 26px; }
+      .high-scores { min-height: 0; padding: 20px 0 0; border-left: 0; border-top: 1px solid rgba(157,149,255,.18); }
+      .score-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 18px; }
+    }
+
+    @media (max-height: 520px) and (orientation: landscape) {
+      .home-screen { padding: 10px 22px; }
+      .home {
+        width: min(900px, 100%);
+        grid-template-columns: minmax(0, 1.35fr) minmax(210px, .75fr);
+        gap: clamp(24px, 5vw, 54px);
+        align-items: center;
+      }
+      .home__hero { padding: 0; }
+      .home__title { font-size: clamp(30px, 5.5vw, 48px); }
+      .home__copy {
+        max-width: 510px;
+        margin: 12px 0 14px;
+        font-size: 13px;
+        line-height: 1.32;
+      }
+      .home .primary { min-width: 178px; padding: 11px 20px; font-size: 9px; }
+      .home .panel__foot { margin-top: 9px; font-size: 9px; }
+      .high-scores {
+        min-height: 0;
+        padding: 10px 0 8px 20px;
+        border-top: 0;
+        border-left: 1px solid rgba(157,149,255,.18);
+      }
+      .high-scores__title { margin-bottom: 6px; font-size: 8px; }
+      .score-list { display: block; }
+      .score-list li {
+        grid-template-columns: 24px 1fr auto;
+        gap: 7px;
+        padding: 5px 0;
+      }
+      .score-list__level { font-size: 10px; }
+      .score-list__value { font-size: 18px; }
+      .brand { top: 11px; left: 14px; }
+      .brand__title { font-size: 13px; }
+      .brand__line { width: 116px; margin-top: 4px; }
+      .metrics {
+        top: 10px;
+        left: auto;
+        right: 14px;
+        width: min(290px, 45vw);
+        gap: 12px;
+        text-align: right;
+      }
+      .metric::before { left: auto; right: -7px; }
+      .status {
+        left: 14px;
+        bottom: 11px;
+        width: min(430px, calc(100vw - 190px));
+        transform: none;
+        text-align: left;
+        animation: none;
+      }
+      .status__message {
+        min-height: 16px;
+        margin-bottom: 5px;
+        font-size: 10px;
+        text-align: left;
+      }
+      .charge__labels { margin-top: 5px; font-size: 7px; }
+      .edge-actions { right: 14px; bottom: 10px; transform: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+    }
+  </style>
+</head>
+<body class="home-active">
+  <main id="stage" aria-label="Interactive Ktarian game field"></main>
+
+  <div class="chrome" aria-live="polite">
+    <header class="brand">
+      <h1 class="brand__title">Ktarian Game</h1>
+      <span class="brand__line"></span>
+    </header>
+
+    <section class="metrics" aria-label="Game status">
+      <div class="metric">
+        <span class="metric__label">Level</span>
+        <span class="metric__value" id="levelValue">01</span>
+      </div>
+      <div class="metric">
+        <span class="metric__label">Score</span>
+        <span class="metric__value" id="scoreValue">000</span>
+      </div>
+      <div class="metric">
+        <span class="metric__label">Tries</span>
+        <span class="metric__value" id="triesValue">03</span>
+      </div>
+    </section>
+
+    <section class="status">
+      <div class="status__message" id="statusMessage">Hold to focus · release to launch</div>
+      <div class="charge" aria-label="Launch charge">
+        <div class="charge__fill" id="chargeFill"></div>
+      </div>
+      <div class="charge__labels"><span>Impulse</span><span>Neural lock</span></div>
+    </section>
+
+    <nav class="edge-actions" aria-label="Game controls">
+      <button class="icon-button" id="soundButton" aria-label="Mute sound" title="Sound">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M11 5 6.5 9H3v6h3.5l4.5 4V5Z"/><path class="sound-wave" d="M15 8.5a5 5 0 0 1 0 7M18 5.5a9 9 0 0 1 0 13"/></svg>
+      </button>
+      <button class="icon-button" id="restartButton" aria-label="Restart game" title="Restart">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4.7 9A8 8 0 1 1 4 14"/><path d="M4.7 4v5h5"/></svg>
+      </button>
+      <button class="icon-button" id="exitButton" aria-label="Exit game" title="Optical burst / exit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5h8v14H5zM13 12h7M17 9l3 3-3 3"/></svg>
+      </button>
+    </nav>
+  </div>
+
+  <section class="home-screen" id="startOverlay">
+    <div class="home">
+      <div class="home__hero">
+        <h1 class="home__title">Ktarian Game</h1>
+        <p class="home__copy"><strong>Focus your intent.</strong> Hold the pointer to build impulse, aim across the field, then release. Guide every disc into a violet aperture.</p>
+        <button class="primary" id="startButton">Initiate link</button>
+        <div class="panel__foot">Mouse / touch · Space to charge · Esc to disengage</div>
+      </div>
+      <aside class="high-scores" aria-labelledby="highScoresTitle">
+        <h2 class="high-scores__title" id="highScoresTitle">Neural records</h2>
+        <ol class="score-list" id="scoreList"></ol>
+      </aside>
+    </div>
+  </section>
+
+  <section class="overlay" id="endOverlay" hidden>
+    <div class="panel">
+      <p class="panel__kicker" id="endKicker">Neural link interrupted</p>
+      <h1 id="endTitle">Released</h1>
+      <p class="panel__copy" id="endCopy">The optical burst has cleared the pattern.</p>
+      <button class="primary" id="againButton">Re-enter game</button>
+    </div>
+  </section>
+
+  <div class="optical-burst" id="opticalBurst" aria-hidden="true">
+    <div class="burst-device">
+      <div class="burst-face burst-face--front">
+        <div class="burst-lens"></div>
+      </div>
+      <div class="burst-face burst-face--right"></div>
+      <div class="burst-face burst-face--top"></div>
+    </div>
+    <div class="burst-flash"></div>
+  </div>
+  <div class="unsupported" id="unsupported">This experience requires a browser with WebGL enabled.</div>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+    const stage = document.querySelector('#stage');
+    const ui = {
+      level: document.querySelector('#levelValue'),
+      score: document.querySelector('#scoreValue'),
+      tries: document.querySelector('#triesValue'),
+      message: document.querySelector('#statusMessage'),
+      charge: document.querySelector('#chargeFill'),
+      startOverlay: document.querySelector('#startOverlay'),
+      endOverlay: document.querySelector('#endOverlay'),
+      endKicker: document.querySelector('#endKicker'),
+      endTitle: document.querySelector('#endTitle'),
+      endCopy: document.querySelector('#endCopy'),
+      burst: document.querySelector('#opticalBurst'),
+      sound: document.querySelector('#soundButton'),
+      scoreList: document.querySelector('#scoreList')
+    };
+
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+    } catch {
+      document.querySelector('#unsupported').style.display = 'grid';
+      throw new Error('WebGL unavailable');
+    }
+
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    stage.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x020208);
+    scene.fog = new THREE.FogExp2(0x03030b, .027);
+
+    const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, .1, 120);
+
+    function configureCamera() {
+      const aspect = innerWidth / innerHeight;
+      const portraitMobile = innerWidth <= 720 && aspect <= 1;
+      const compactLandscape = innerHeight <= 540 && aspect > 1.25;
+      camera.aspect = aspect;
+      camera.zoom = portraitMobile ? 1.16 : compactLandscape ? 1.42 : 1;
+      camera.fov = portraitMobile ? 48 : 40;
+      camera.position.set(
+        0,
+        portraitMobile ? 12.3 : 11.2,
+        portraitMobile ? 17.2 : 15.8
+      );
+      camera.lookAt(0, .35, -1.4);
+      camera.updateProjectionMatrix();
+    }
+
+    configureCamera();
+
+    const clock = new THREE.Clock();
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2(0, .2);
+    const aimPlane = new THREE.Plane();
+    const aimHit = new THREE.Vector3();
+    const tmp = new THREE.Vector3();
+    const board = new THREE.Group();
+    board.position.z = -1.15;
+    board.rotation.x = THREE.MathUtils.degToRad(-11);
+    scene.add(board);
+    board.updateMatrixWorld(true);
+    aimPlane.setFromNormalAndCoplanarPoint(
+      new THREE.Vector3(0, 1, 0).applyQuaternion(board.quaternion).normalize(),
+      board.localToWorld(new THREE.Vector3(0, .13, 0))
+    );
+
+    const state = {
+      started: false,
+      playing: false,
+      charging: false,
+      charge: 0,
+      chargeStart: 0,
+      level: 1,
+      score: 0,
+      tries: 3,
+      targets: [],
+      discs: [],
+      activeDisc: null,
+      flights: [],
+      muted: false,
+      transitioning: false,
+      pointerDownId: null,
+      generation: 0,
+      discSerial: 0,
+      levelHits: 0,
+      levelQuota: 1,
+      levelConesIssued: 0,
+      scoreRecorded: false
+    };
+
+    // Procedural star field.
+    {
+      const count = 4800;
+      const tiers = [
+        { positions: [], colors: [], size: .145, opacity: 1 },
+        { positions: [], colors: [], size: .235, opacity: 1 },
+        { positions: [], colors: [], size: .38, opacity: 1 }
+      ];
+      const starCanvas = document.createElement('canvas');
+      starCanvas.width = starCanvas.height = 64;
+      const starContext = starCanvas.getContext('2d');
+      const starGradient = starContext.createRadialGradient(32, 32, 0, 32, 32, 32);
+      starGradient.addColorStop(0, 'rgba(255,255,255,1)');
+      starGradient.addColorStop(.55, 'rgba(255,255,255,.98)');
+      starGradient.addColorStop(.78, 'rgba(255,255,255,.62)');
+      starGradient.addColorStop(1, 'rgba(255,255,255,0)');
+      starContext.fillStyle = starGradient;
+      starContext.fillRect(0, 0, 64, 64);
+      const starTexture = new THREE.CanvasTexture(starCanvas);
+      const c = new THREE.Color();
+      for (let i = 0; i < count; i++) {
+        const depth = 25 + Math.random() * 58;
+        const sizeRoll = Math.random();
+        const tier = sizeRoll > .95 ? tiers[2] : sizeRoll > .72 ? tiers[1] : tiers[0];
+        tier.positions.push(
+          (Math.random() - .5) * depth * 2.05,
+          (Math.random() - .5) * depth * 1.28 + 5,
+          -depth
+        );
+        const brightnessRoll = Math.pow(Math.random(), 1.7);
+        const tierLift = tier === tiers[2] ? .08 : tier === tiers[1] ? .035 : 0;
+        const starLightness = .7 + brightnessRoll * .28 + tierLift;
+        c.setHSL(
+          .6 + Math.random() * .1,
+          .18 + Math.random() * .32,
+          Math.min(.98, starLightness)
+        );
+        tier.colors.push(c.r, c.g, c.b);
+      }
+      const starField = new THREE.Group();
+      tiers.forEach(tier => {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(tier.positions, 3));
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(tier.colors, 3));
+        starField.add(new THREE.Points(geo, new THREE.PointsMaterial({
+          size: tier.size,
+          sizeAttenuation: true,
+          transparent: true,
+          opacity: tier.opacity,
+          map: starTexture,
+          alphaTest: .06,
+          depthWrite: false,
+          vertexColors: true
+        })));
+      });
+      scene.add(starField);
+      state.stars = starField;
+    }
+
+    const ambient = new THREE.HemisphereLight(0x7770ff, 0x120405, .42);
+    scene.add(ambient);
+    const key = new THREE.SpotLight(0xa39dff, 24, 35, .48, .7, 1.7);
+    key.position.set(-5, 12, 7);
+    key.target.position.set(0, 0, -2);
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    scene.add(key, key.target);
+    const redLight = new THREE.PointLight(0xff2810, 9, 18, 2);
+    redLight.position.set(0, 2, 2);
+    scene.add(redLight);
+    const fieldSpotlight = new THREE.SpotLight(0xffd6b0, 34, 20, .34, .82, 1.35);
+    fieldSpotlight.position.set(0, 8.5, 0);
+    fieldSpotlight.target.position.set(0, 0, 0);
+    scene.add(fieldSpotlight, fieldSpotlight.target);
+
+    // Transparent field ghost — enough structure to catch highlights without becoming a board.
+    const field = new THREE.Mesh(
+      new THREE.PlaneGeometry(10.9, 9.1),
+      new THREE.MeshPhysicalMaterial({
+        color: 0x18182b, transparent: true, opacity: .13, roughness: .15,
+        metalness: .15, transmission: .2, side: THREE.DoubleSide, depthWrite: false
+      })
+    );
+    field.rotation.x = -Math.PI / 2;
+    field.position.y = -.08;
+    field.receiveShadow = true;
+    board.add(field);
+
+    // Depth-only backing keeps the rear star field behind the board silhouette.
+    const starOccluder = new THREE.Mesh(
+      new THREE.PlaneGeometry(10.95, 9.15),
+      new THREE.MeshBasicMaterial({
+        colorWrite: false,
+        depthWrite: true,
+        depthTest: true,
+        side: THREE.DoubleSide
+      })
+    );
+    starOccluder.rotation.x = -Math.PI / 2;
+    starOccluder.position.y = -.115;
+    starOccluder.renderOrder = -10;
+    board.add(starOccluder);
+
+    const rim = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(11, .08, 9.2)),
+      new THREE.LineBasicMaterial({ color: 0x464176, transparent: true, opacity: .25 })
+    );
+    rim.position.y = -.08;
+    board.add(rim);
+
+    const holes = [];
+    const holeGeo = new THREE.CylinderGeometry(.54, .54, .07, 48);
+    const haloGeo = new THREE.RingGeometry(.43, .65, 48);
+    for (let row = 0; row < 6; row++) {
+      for (let col = 0; col < 7; col++) {
+        const group = new THREE.Group();
+        const x = (col - 3) * 1.48;
+        const z = (row - 2.5) * 1.46;
+        group.position.set(x, 0, z);
+        const well = new THREE.Mesh(holeGeo, new THREE.MeshStandardMaterial({
+          color: 0x8f1008, emissive: 0xff210c, emissiveIntensity: .95,
+          roughness: .32, metalness: .25
+        }));
+        well.position.y = -.02;
+        const halo = new THREE.Mesh(haloGeo, new THREE.MeshBasicMaterial({
+          color: 0xff3215, transparent: true, opacity: .18, blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide, depthWrite: false
+        }));
+        halo.rotation.x = -Math.PI / 2;
+        halo.position.y = .025;
+        group.add(well, halo);
+        board.add(group);
+        holes.push({ group, well, halo, row, col });
+      }
+    }
+    const holeDark = new THREE.Color(0x741008);
+    const holeLit = new THREE.Color(0xff5a2d);
+
+    // A roaming pool of brightness across roughly a 3x3 section.
+    const glowCanvas = document.createElement('canvas');
+    glowCanvas.width = glowCanvas.height = 256;
+    const gc = glowCanvas.getContext('2d');
+    const grad = gc.createRadialGradient(128,128,0,128,128,128);
+    grad.addColorStop(0, 'rgba(255,246,220,.92)');
+    grad.addColorStop(.34, 'rgba(255,187,124,.48)');
+    grad.addColorStop(.7, 'rgba(255,92,48,.13)');
+    grad.addColorStop(1, 'rgba(255,35,10,0)');
+    gc.fillStyle = grad;
+    gc.fillRect(0,0,256,256);
+    const glowTexture = new THREE.CanvasTexture(glowCanvas);
+    const wanderGlow = new THREE.Mesh(
+      new THREE.PlaneGeometry(5.6, 5.6),
+      new THREE.MeshBasicMaterial({ map: glowTexture, transparent: true, opacity: .82, depthWrite: false, blending: THREE.AdditiveBlending })
+    );
+    wanderGlow.rotation.x = -Math.PI / 2;
+    wanderGlow.position.y = .06;
+    board.add(wanderGlow);
+
+    function makeCone() {
+      const group = new THREE.Group();
+      const segments = 48;
+      const rings = 25;
+      const verts = [];
+      const indices = [];
+      const uvs = [];
+      const curvePoint = v => {
+        const bend = Math.max(0, (v - .38) / .62);
+        const bendCurve = bend * bend;
+        const bendCubic = bendCurve * bend;
+        return {
+          y: v * 2.5 - bendCurve * .18,
+          z: bendCurve * 1.25 - bendCubic * .3,
+          bend,
+          dy: 2.5 - (bend > 0 ? bend * (2 * .18 / .62) : 0),
+          dz: bend > 0 ? (2.5 * bend - .9 * bendCurve) / .62 : 0
+        };
+      };
+      for (let j = 0; j <= rings; j++) {
+        const v = j / rings;
+        const curve = curvePoint(v);
+        const tangentLength = Math.hypot(curve.dy, curve.dz);
+        const basisY = curve.dz / tangentLength;
+        const basisZ = -curve.dy / tangentLength;
+        const radius = .1 + Math.pow(v, 2.08) * .72 + Math.pow(curve.bend, 4) * .08;
+        const sideScale = 1 - Math.pow(curve.bend, 2) * .18;
+        for (let i = 0; i <= segments; i++) {
+          const u = i / segments;
+          const angle = u * Math.PI * 2;
+          const radialX = Math.cos(angle) * radius;
+          const radialSide = Math.sin(angle) * radius * sideScale;
+          verts.push(
+            radialX,
+            curve.y + radialSide * basisY,
+            curve.z + radialSide * basisZ
+          );
+          uvs.push(u, v);
+        }
+      }
+      for (let j = 0; j < rings; j++) {
+        for (let i = 0; i < segments; i++) {
+          const a = j * (segments + 1) + i;
+          const b = a + segments + 1;
+          indices.push(a, b, a + 1, b, b + 1, a + 1);
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      geo.setIndex(indices);
+      geo.computeVertexNormals();
+
+      const mat = new THREE.ShaderMaterial({
+        transparent: false,
+        side: THREE.DoubleSide,
+        uniforms: {
+          time: { value: 0 },
+          pulse: { value: 0 },
+          colorA: { value: new THREE.Color(0x766ee0) },
+          colorB: { value: new THREE.Color(0xe1deff) }
+        },
+        vertexShader: `
+          uniform float time;
+          varying vec2 vUv;
+          varying vec3 vNormalView;
+          varying vec3 vLocal;
+          void main() {
+            vUv = uv;
+            vec3 p = position;
+            float anchored = sin(uv.y * 3.14159265);
+            float sway = sin(time * 1.5 + uv.y * 5.0) * .1 * anchored;
+            p.x += sway + sin(time * 2.1 + uv.y * 8.0) * .028 * anchored;
+            p.z += cos(time * 1.25 + uv.y * 6.0) * .07 * anchored;
+            vLocal = p;
+            vNormalView = normalize(normalMatrix * normal);
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float time;
+          uniform float pulse;
+          uniform vec3 colorA;
+          uniform vec3 colorB;
+          varying vec2 vUv;
+          varying vec3 vNormalView;
+          varying vec3 vLocal;
+
+          float hash(vec3 p) {
+            p = fract(p * .3183099 + vec3(.17, .13, .11));
+            p *= 17.0;
+            return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+          }
+
+          float noise3(vec3 p) {
+            vec3 i = floor(p);
+            vec3 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(
+              mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x),
+                  mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+              mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
+                  mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y),
+              f.z
+            );
+          }
+
+          void main() {
+            float broad = noise3(vLocal * 1.7 + vec3(2.3, 5.1, 1.7));
+            float detail = noise3(vLocal * 4.1 + vec3(7.4, 1.2, 3.8));
+            float splotch = smoothstep(.64, .82, broad * .72 + detail * .28);
+            vec3 lightDir = normalize(vec3(-.35, .72, .6));
+            float diffuse = max(dot(normalize(vNormalView), lightDir), 0.0);
+            float matteLight = .74 + diffuse * .26;
+            vec3 base = mix(colorA, colorB, .2 + vUv.y * .16);
+            vec3 color = mix(base, colorB, splotch * .14 + pulse * .58);
+            gl_FragColor = vec4(color * matteLight, 1.0);
+          }
+        `
+      });
+      const body = new THREE.Mesh(geo, mat);
+      body.castShadow = true;
+      group.add(body);
+
+      const end = curvePoint(1);
+      const endTangent = new THREE.Vector3(0, end.dy, end.dz).normalize();
+      const endPosition = new THREE.Vector3(0, end.y, end.z);
+      const bellOrientation = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 0, 1),
+        endTangent
+      );
+      const mouth = new THREE.Mesh(
+        new THREE.TorusGeometry(.78, .06, 12, 64),
+        new THREE.MeshStandardMaterial({
+          color: 0xa29ce9,
+          roughness: .72,
+          metalness: .03
+        })
+      );
+      mouth.position.copy(endPosition);
+      mouth.quaternion.copy(bellOrientation);
+      mouth.scale.y = .82;
+      group.add(mouth);
+
+      const throat = new THREE.Group();
+      throat.position.copy(endPosition);
+      throat.quaternion.copy(bellOrientation);
+      throat.scale.y = .82;
+
+      const funnelDepth = .78;
+      const innerWall = new THREE.Mesh(
+        new THREE.CylinderGeometry(.72, .13, funnelDepth, 64, 8, true),
+        new THREE.ShaderMaterial({
+          side: THREE.BackSide,
+          uniforms: {
+            rimColor: { value: new THREE.Color(0x6861bd) },
+            deepColor: { value: new THREE.Color(0x090817) }
+          },
+          vertexShader: `
+            varying vec2 vUv;
+            void main() {
+              vUv = uv;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+          `,
+          fragmentShader: `
+            uniform vec3 rimColor;
+            uniform vec3 deepColor;
+            varying vec2 vUv;
+            void main() {
+              float depthShade = smoothstep(0.0, .88, vUv.y);
+              vec3 color = mix(deepColor, rimColor, depthShade);
+              gl_FragColor = vec4(color, 1.0);
+            }
+          `
+        })
+      );
+      innerWall.rotation.x = Math.PI / 2;
+      innerWall.position.z = -funnelDepth / 2;
+
+      const deepThroat = new THREE.Mesh(
+        new THREE.CircleGeometry(.135, 48),
+        new THREE.MeshBasicMaterial({
+          color: 0x05040d,
+          side: THREE.DoubleSide
+        })
+      );
+      deepThroat.position.z = -funnelDepth - .006;
+      throat.add(innerWall, deepThroat);
+      group.add(throat);
+
+      group.userData = {
+        mat, mouth, throat, spawn: 0, pulse: 0, hit: false,
+        seed: Math.random() * 10,
+        mouthPosition: endPosition.clone(),
+        retreat: 0,
+        accepting: false,
+        reserved: false
+      };
+      group.scale.set(.01, .01, .01);
+      return group;
+    }
+
+    function coneMouthCenter(cone) {
+      return cone.userData.mouthPosition.clone()
+        .multiply(cone.scale)
+        .applyQuaternion(cone.quaternion)
+        .add(cone.position);
+    }
+
+    function coneMouthNormal(cone) {
+      return new THREE.Vector3(0, 0, 1)
+        .applyQuaternion(cone.userData.mouth.quaternion)
+        .applyQuaternion(cone.quaternion)
+        .normalize();
+    }
+
+    function coneMouthDiscQuaternion(cone, entryTilt) {
+      const aligned = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        coneMouthNormal(cone)
+      );
+      return entryTilt ? aligned.multiply(entryTilt) : aligned;
+    }
+
+    function applyConeRetreat(cone, retreatRaw) {
+      const retreat = retreatRaw * retreatRaw * (3 - 2 * retreatRaw);
+      const remaining = Math.max(.015, 1 - retreat);
+      cone.scale.set(.92 * remaining, remaining, .92 * remaining);
+      cone.position.y = -retreat * .16;
+      cone.userData.mouth.scale.set(1, .82, 1);
+      cone.userData.throat.scale.set(1, .82, 1);
+      return remaining;
+    }
+
+    function makeDisc() {
+      const group = new THREE.Group();
+      const profile = [
+        new THREE.Vector2(0, -.09),
+        new THREE.Vector2(.67, -.09),
+        new THREE.Vector2(.72, -.075),
+        new THREE.Vector2(.765, -.035),
+        new THREE.Vector2(.79, .015),
+        new THREE.Vector2(.79, .055),
+        new THREE.Vector2(.765, .105),
+        new THREE.Vector2(.72, .137),
+        new THREE.Vector2(.67, .15),
+        new THREE.Vector2(0, .15)
+      ];
+      const body = new THREE.Mesh(
+        new THREE.LatheGeometry(profile, 64),
+        new THREE.MeshStandardMaterial({
+          color: 0x8e130c, emissive: 0xff260f, emissiveIntensity: .9,
+          roughness: .3, metalness: .18
+        })
+      );
+      body.castShadow = true;
+      group.add(body);
+
+      // Eight solid bands, ordered center-out: pink, red, pink, red, pink, red, pink, red.
+      const radii = [.765, .67, .575, .48, .385, .29, .195, .1];
+      radii.forEach((radius, outerIndex) => {
+        const pink = outerIndex % 2 === 1;
+        const band = new THREE.Mesh(
+          new THREE.CircleGeometry(radius, 64),
+          new THREE.MeshBasicMaterial({
+            color: pink ? 0xffa99a : 0xb91f12,
+            transparent: true,
+            opacity: pink ? .98 : .96
+          })
+        );
+        band.rotation.x = -Math.PI / 2;
+        band.position.y = .151 + outerIndex * .0007;
+        band.renderOrder = outerIndex;
+        group.add(band);
+      });
+
+      const sheen = new THREE.Mesh(
+        new THREE.CircleGeometry(.74, 64),
+        new THREE.MeshBasicMaterial({
+          color: 0xff6048, transparent: true, opacity: .1,
+          blending: THREE.AdditiveBlending, depthWrite: false
+        })
+      );
+      sheen.rotation.x = -Math.PI / 2;
+      sheen.position.y = .16;
+      sheen.renderOrder = 10;
+      group.add(sheen);
+      const halo = new THREE.PointLight(0xff351c, 3, 5, 2);
+      halo.position.y = .3;
+      group.add(halo);
+      return group;
+    }
+
+    const reticle = new THREE.Group();
+    const reticleRing = new THREE.Mesh(
+      new THREE.RingGeometry(.32, .38, 48),
+      new THREE.MeshBasicMaterial({ color: 0xffa08c, transparent: true, opacity: .6, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    reticleRing.rotation.x = -Math.PI / 2;
+    reticle.add(reticleRing);
+    for (let i = 0; i < 4; i++) {
+      const mark = new THREE.Mesh(
+        new THREE.PlaneGeometry(.22, .018),
+        new THREE.MeshBasicMaterial({ color: 0xffc2b5, transparent: true, opacity: .65 })
+      );
+      mark.rotation.x = -Math.PI / 2;
+      mark.rotation.z = i * Math.PI / 2;
+      mark.position.set(Math.cos(i*Math.PI/2)*.49, .002, Math.sin(i*Math.PI/2)*.49);
+      reticle.add(mark);
+    }
+    reticle.visible = false;
+    board.add(reticle);
+
+    const aimLineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+    const aimLine = new THREE.Line(aimLineGeo, new THREE.LineDashedMaterial({
+      color: 0xff6c4e, transparent: true, opacity: .34, dashSize: .18, gapSize: .12
+    }));
+    aimLine.computeLineDistances();
+    board.add(aimLine);
+    aimLine.visible = false;
+
+    let audioCtx = null;
+    function tone(freq, duration, type = 'sine', gain = .035, slide = 0) {
+      if (state.muted) return;
+      try {
+        audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const amp = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        if (slide) osc.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), audioCtx.currentTime + duration);
+        amp.gain.setValueAtTime(gain, audioCtx.currentTime);
+        amp.gain.exponentialRampToValueAtTime(.0001, audioCtx.currentTime + duration);
+        osc.connect(amp).connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch {}
+    }
+
+    function updateHUD() {
+      ui.level.textContent = String(state.level).padStart(2, '0');
+      ui.score.textContent = String(state.score).padStart(3, '0');
+      ui.tries.textContent = String(state.tries).padStart(2, '0');
+    }
+
+    const scoreStorageKey = 'ktarian-high-scores-v1';
+
+    function loadHighScores() {
+      try {
+        const scores = JSON.parse(localStorage.getItem(scoreStorageKey) || '[]');
+        return Array.isArray(scores)
+          ? scores.filter(entry => Number.isFinite(entry?.score) && Number.isFinite(entry?.level)).slice(0, 5)
+          : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function renderHighScores() {
+      const scores = loadHighScores();
+      ui.scoreList.replaceChildren();
+      if (!scores.length) {
+        const empty = document.createElement('li');
+        empty.className = 'score-list__empty';
+        empty.textContent = 'No patterns recorded';
+        ui.scoreList.append(empty);
+        return;
+      }
+      scores.forEach(entry => {
+        const item = document.createElement('li');
+        const level = document.createElement('span');
+        const value = document.createElement('span');
+        level.className = 'score-list__level';
+        value.className = 'score-list__value';
+        level.textContent = `Level ${entry.level}`;
+        value.textContent = String(entry.score).padStart(4, '0');
+        item.append(level, value);
+        ui.scoreList.append(item);
+      });
+    }
+
+    function recordHighScore() {
+      if (state.scoreRecorded || state.score <= 0) return;
+      state.scoreRecorded = true;
+      const scores = loadHighScores();
+      scores.push({ score: state.score, level: state.level });
+      scores.sort((a, b) => b.score - a.score || b.level - a.level);
+      try {
+        localStorage.setItem(scoreStorageKey, JSON.stringify(scores.slice(0, 5)));
+      } catch {}
+      renderHighScores();
+    }
+
+    function updateSceneMetrics() {
+      stage.dataset.discs = String(state.discs.length + state.flights.length);
+      stage.dataset.targets = String(state.targets.filter(target => !target.userData.hit).length);
+    }
+
+    let messageTimer = 0;
+    function message(text, toneName = '') {
+      ui.message.textContent = text;
+      ui.message.dataset.tone = toneName;
+      clearTimeout(messageTimer);
+      if (toneName) {
+        messageTimer = setTimeout(() => {
+          ui.message.textContent = state.playing ? 'Hold to focus · release to launch' : text;
+          ui.message.dataset.tone = '';
+        }, 1400);
+      }
+    }
+
+    function clearObjects() {
+      state.targets.forEach(target => board.remove(target));
+      state.targets = [];
+      state.discs.forEach(disc => board.remove(disc));
+      state.discs = [];
+      state.activeDisc = null;
+      state.flights.forEach(flight => board.remove(flight.disc));
+      state.flights = [];
+      state.generation++;
+      state.discSerial = 0;
+      updateSceneMetrics();
+    }
+
+    function availableHole(maxRow = 3) {
+      const occupied = state.targets.map(t => t.userData.holeIndex);
+      const options = holes
+        .map((h, i) => ({ h, i }))
+        .filter(({ h, i }) => h.row <= maxRow && !occupied.includes(i) && !(h.row === 3 && h.col === 3));
+      return options[Math.floor(Math.random() * options.length)];
+    }
+
+    function availableDiscHole() {
+      const occupied = new Set([
+        ...state.targets.map(target => target.userData.holeIndex),
+        ...state.discs.map(disc => disc.userData.sourceHoleIndex),
+        ...state.flights.map(flight => flight.disc.userData.sourceHoleIndex)
+      ]);
+      const bottomOptions = holes
+        .map((hole, index) => ({ hole, index }))
+        .filter(({ hole, index }) => hole.row >= 4 && !occupied.has(index));
+      return bottomOptions[Math.floor(Math.random() * bottomOptions.length)];
+    }
+
+    function randomDelay(min, max) {
+      return min + Math.random() * (max - min);
+    }
+
+    function nearestMissHole(aimedCone, fallbackPosition) {
+      const reference = aimedCone?.position || fallbackPosition;
+      const excludedIndex = aimedCone?.userData.holeIndex;
+      const occupiedTargets = new Set(
+        state.targets
+          .filter(cone => cone !== aimedCone && !cone.userData.hit)
+          .map(cone => cone.userData.holeIndex)
+      );
+      let best = null;
+      let bestDistance = Infinity;
+      holes.forEach((hole, index) => {
+        if (index === excludedIndex || occupiedTargets.has(index)) return;
+        const distance = Math.hypot(
+          hole.group.position.x - reference.x,
+          hole.group.position.z - reference.z
+        );
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = { hole, index };
+        }
+      });
+      return best;
+    }
+
+    function pathMissHole(origin, destination, nearMissCone, sourceHoleIndex) {
+      if (nearMissCone) return nearestMissHole(nearMissCone, destination);
+
+      const start = new THREE.Vector2(origin.x, origin.z);
+      const end = new THREE.Vector2(destination.x, destination.z);
+      const path = end.clone().sub(start);
+      const pathLength = Math.max(.001, path.length());
+      const direction = path.clone().divideScalar(pathLength);
+      const occupiedTargets = new Set(
+        state.targets
+          .filter(cone => !cone.userData.hit)
+          .map(cone => cone.userData.holeIndex)
+      );
+      let best = null;
+      let bestScore = Infinity;
+      holes.forEach((hole, index) => {
+        if (index === sourceHoleIndex || occupiedTargets.has(index)) return;
+        const relative = new THREE.Vector2(
+          hole.group.position.x - start.x,
+          hole.group.position.z - start.y
+        );
+        const projection = relative.dot(direction);
+        const perpendicular = Math.abs(
+          relative.x * direction.y - relative.y * direction.x
+        );
+        const behindPenalty = projection < 0 ? Math.abs(projection) * 3 : 0;
+        const endpointBias = Math.abs(projection - pathLength) * .12;
+        const score = perpendicular * 1.7 + endpointBias + behindPenalty;
+        if (score < bestScore) {
+          bestScore = score;
+          best = { hole, index };
+        }
+      });
+      return best;
+    }
+
+    function spawnCone(delay = 0, generation = state.generation) {
+      setTimeout(() => {
+        if (!state.playing || state.transitioning || generation !== state.generation) return;
+        const capacity = Math.min(state.levelQuota, 3);
+        const liveCount = state.targets.filter(target => !target.userData.hit).length;
+        if (liveCount >= capacity) return;
+        const chosen = availableHole(3);
+        if (!chosen) return;
+        const cone = makeCone();
+        cone.position.copy(chosen.h.group.position);
+        cone.userData.holeIndex = chosen.i;
+        cone.userData.spawn = clock.elapsedTime;
+        state.targets.push(cone);
+        board.add(cone);
+        updateSceneMetrics();
+        tone(125, .28, 'sine', .018, 90);
+      }, delay);
+    }
+
+    function spawnDisc(delay = 0, generation = state.generation) {
+      setTimeout(() => {
+        if (!state.playing || state.transitioning || generation !== state.generation) return;
+        const capacity = Math.min(state.levelQuota, 3);
+        const presentCount = state.discs.length + state.flights.length;
+        if (presentCount >= capacity) return;
+        const chosen = availableDiscHole();
+        if (!chosen) return;
+        const disc = makeDisc();
+        const source = chosen.hole.group.position.clone();
+        disc.position.copy(source);
+        disc.position.y = -.18;
+        disc.scale.setScalar(.05);
+        disc.userData.birth = clock.elapsedTime;
+        disc.userData.source = source;
+        disc.userData.sourceHoleIndex = chosen.index;
+        disc.userData.wanderSeed = state.discSerial * (Math.PI * 2 / 3) + Math.random() * .24;
+        const travelAngle = disc.userData.wanderSeed + Math.PI * .35;
+        disc.userData.velocity = new THREE.Vector2(
+          Math.cos(travelAngle),
+          Math.sin(travelAngle)
+        ).multiplyScalar(.3);
+        state.discSerial++;
+        disc.userData.floatY = -.18;
+        disc.userData.baseScale = .75;
+        state.discs.push(disc);
+        state.activeDisc ||= disc;
+        board.add(disc);
+        updateSceneMetrics();
+        tone(170, .32, 'sine', .025, 150);
+      }, delay);
+    }
+
+    function beginLevel({ freshStart = false } = {}) {
+      if (freshStart) clearObjects();
+      state.tries = 3;
+      state.transitioning = false;
+      updateHUD();
+      const count = Math.min(state.level, 3);
+      state.levelHits = 0;
+      state.levelQuota = state.level;
+      state.levelConesIssued = count;
+      const generation = state.generation;
+      for (let i = 0; i < count; i++) {
+        const coneDelay = i === 0
+          ? randomDelay(60, 220)
+          : i * 360 + randomDelay(120, 620);
+        spawnCone(coneDelay, generation);
+      }
+      updateSceneMetrics();
+      message(`Level ${state.level} · ${state.levelQuota} aperture${state.levelQuota > 1 ? 's' : ''} detected`);
+      for (let i = 0; i < count; i++) {
+        const discDelay = i === 0
+          ? randomDelay(380, 720)
+          : i * 430 + randomDelay(260, 820);
+        spawnDisc(discDelay, generation);
+      }
+    }
+
+    function resetGame() {
+      state.level = 1;
+      state.score = 0;
+      state.tries = 3;
+      state.scoreRecorded = false;
+      state.charge = 0;
+      state.charging = false;
+      ui.charge.style.width = '0%';
+      updateHUD();
+      if (state.started) {
+        state.playing = true;
+        beginLevel({ freshStart: true });
+      }
+    }
+
+    function startGame() {
+      state.started = true;
+      state.playing = true;
+      document.body.classList.remove('home-active');
+      ui.startOverlay.hidden = true;
+      ui.endOverlay.hidden = true;
+      tone(105, .75, 'sine', .04, 230);
+      resetGame();
+    }
+
+    function getAimDestination() {
+      if (!state.activeDisc) return null;
+      raycaster.setFromCamera(pointer, camera);
+      if (!raycaster.ray.intersectPlane(aimPlane, aimHit)) return null;
+      const local = board.worldToLocal(aimHit.clone());
+      const origin = state.activeDisc.position.clone();
+      const dir = local.sub(origin).setY(0);
+      if (dir.lengthSq() < .001) dir.set(0, 0, -1);
+      dir.normalize();
+      const distance = .25 + state.charge * 12.2;
+      return origin.addScaledVector(dir, distance).setY(.12);
+    }
+
+    function updateAim() {
+      if (!state.playing || !state.activeDisc) {
+        reticle.visible = false;
+        aimLine.visible = false;
+        return;
+      }
+      const destination = getAimDestination();
+      if (!destination) return;
+      reticle.visible = true;
+      reticle.position.copy(destination);
+      const s = .75 + state.charge * .45;
+      reticle.scale.setScalar(s);
+      reticleRing.material.opacity = .3 + state.charge * .55;
+      const position = aimLine.geometry.attributes.position;
+      const origin = state.activeDisc.position;
+      position.setXYZ(0, origin.x, .12, origin.z);
+      position.setXYZ(1, destination.x, .12, destination.z);
+      position.needsUpdate = true;
+      aimLine.computeLineDistances();
+      aimLine.material.opacity = state.charging ? .68 : .3;
+      aimLine.visible = true;
+    }
+
+    function beginCharge(event) {
+      if (!state.playing || !state.activeDisc || state.transitioning) return;
+      if (event?.button !== undefined && event.button !== 0) return;
+      state.charging = true;
+      state.chargeStart = performance.now();
+      state.charge = .04;
+      state.pointerDownId = event?.pointerId ?? null;
+      if (event?.pointerId !== undefined) {
+        renderer.domElement.setPointerCapture?.(event.pointerId);
+      }
+      message('Focus building');
+      tone(88, .18, 'sine', .018, 25);
+    }
+
+    function launch() {
+      if (!state.charging || !state.activeDisc) return;
+      state.charging = false;
+      state.pointerDownId = null;
+      const destination = getAimDestination();
+      if (!destination) return;
+
+      let target = null;
+      let closest = 1.02;
+      let nearMissCone = null;
+      let closestNearMiss = Infinity;
+      const launchOrigin = state.activeDisc.position.clone();
+      const launchDirection = destination.clone().sub(launchOrigin).setY(0).normalize();
+      const launchLength = destination.distanceTo(launchOrigin);
+      state.targets.forEach(cone => {
+        if (cone.userData.hit || cone.userData.reserved) return;
+        const d = new THREE.Vector2(destination.x - cone.position.x, destination.z - cone.position.z).length();
+        if (d < closest) { closest = d; target = cone; }
+        const coneDirection = cone.position.clone().sub(launchOrigin).setY(0);
+        if (coneDirection.lengthSq() > .001) {
+          const projection = coneDirection.dot(launchDirection);
+          const perpendicular = coneDirection.clone()
+            .addScaledVector(launchDirection, -projection)
+            .length();
+          const nearMissScore = d + perpendicular * .35;
+          if (
+            d >= closest &&
+            d < 2.05 &&
+            perpendicular < .88 &&
+            projection > 0 &&
+            projection < launchLength + 1.05 &&
+            nearMissScore < closestNearMiss
+          ) {
+            closestNearMiss = nearMissScore;
+            nearMissCone = cone;
+          }
+        }
+      });
+      if (target) {
+        target.userData.reserved = true;
+        destination.copy(coneMouthCenter(target));
+      }
+      const missHole = target
+        ? null
+        : pathMissHole(
+            launchOrigin,
+            destination,
+            nearMissCone,
+            state.activeDisc.userData.sourceHoleIndex
+          );
+      if (missHole) {
+        destination.copy(missHole.hole.group.position);
+        destination.y = -.22;
+      }
+
+      const launchedDisc = state.activeDisc;
+      state.discs = state.discs.filter(disc => disc !== launchedDisc);
+      state.activeDisc = state.discs[0] || null;
+      state.flights.push({
+        disc: launchedDisc,
+        start: launchedDisc.position.clone(),
+        end: destination,
+        target,
+        progress: 0,
+        duration: target
+          ? 2.05 + (1 - state.charge) * .5
+          : 1.12 + (1 - state.charge) * .48,
+        power: state.charge,
+        startScale: launchedDisc.scale.x,
+        startQuaternion: launchedDisc.quaternion.clone(),
+        entryTilt: target
+          ? new THREE.Quaternion().setFromEuler(new THREE.Euler(
+              THREE.MathUtils.degToRad(randomDelay(-15, 15)),
+              0,
+              THREE.MathUtils.degToRad(randomDelay(-10, 10))
+            ))
+          : null,
+        missHoleIndex: missHole?.index ?? null
+      });
+      state.charge = .04;
+      updateSceneMetrics();
+      reticle.visible = false;
+      aimLine.visible = false;
+      ui.charge.style.width = '0%';
+      message(target ? 'Trajectory locked' : 'Trajectory committed');
+      tone(230, .42, 'sawtooth', .027, 260);
+    }
+
+    function resolveFlight(flight) {
+      board.remove(flight.disc);
+      state.flights = state.flights.filter(activeFlight => activeFlight !== flight);
+      if (flight.target) {
+        const target = flight.target;
+        target.userData.hit = true;
+        target.userData.pulse = 1;
+        state.levelHits++;
+        const levelCleared = state.levelHits >= state.levelQuota;
+        updateSceneMetrics();
+        state.score += 100 * state.level;
+        updateHUD();
+        message('Pattern accepted', 'hit');
+        tone(440, .16, 'sine', .04, 330);
+        setTimeout(() => tone(660, .35, 'sine', .028, 280), 100);
+        setTimeout(() => {
+          board.remove(target);
+          state.targets = state.targets.filter(t => t !== target);
+          updateSceneMetrics();
+          if (levelCleared) completeLevel();
+        }, 1100);
+        if (!levelCleared && state.levelConesIssued < state.levelQuota) {
+          state.levelConesIssued++;
+          spawnCone(randomDelay(480, 900), state.generation);
+          spawnDisc(randomDelay(700, 1200), state.generation);
+        }
+      } else {
+        state.tries--;
+        updateSceneMetrics();
+        updateHUD();
+        message('Pattern rejected', 'miss');
+        tone(150, .5, 'square', .025, -70);
+        if (state.tries <= 0) {
+          setTimeout(gameOver, 650);
+        } else {
+          spawnDisc(randomDelay(420, 1500), state.generation);
+        }
+      }
+    }
+
+    function completeLevel() {
+      state.transitioning = true;
+      state.score += 250 * state.level;
+      updateHUD();
+      message(`Level ${state.level} assimilated`, 'hit');
+      tone(320, .75, 'sine', .035, 500);
+      setTimeout(() => {
+        state.level++;
+        beginLevel();
+      }, 550);
+    }
+
+    function gameOver() {
+      state.playing = false;
+      recordHighScore();
+      clearObjects();
+      ui.endKicker.textContent = 'Pattern rejected';
+      ui.endTitle.textContent = 'Link Lost';
+      ui.endCopy.textContent = `You reached level ${state.level} with a score of ${state.score}. Recalibrate and try the sequence again.`;
+      ui.endOverlay.hidden = false;
+    }
+
+    function exitGame() {
+      if (!state.started || ui.burst.classList.contains('active')) return;
+      state.playing = false;
+      state.charging = false;
+      recordHighScore();
+      ui.charge.style.width = '0%';
+      ui.burst.classList.remove('active');
+      void ui.burst.offsetWidth;
+      ui.burst.classList.add('active');
+      tone(70, 1.35, 'sawtooth', .035, 760);
+      setTimeout(() => ui.burst.classList.remove('active'), 1850);
+      setTimeout(() => {
+        clearObjects();
+        state.started = false;
+        state.transitioning = false;
+        ui.endOverlay.hidden = true;
+        ui.startOverlay.hidden = false;
+        document.body.classList.add('home-active');
+        renderHighScores();
+      }, 1750);
+    }
+
+    function updatePointer(event) {
+      pointer.x = (event.clientX / innerWidth) * 2 - 1;
+      pointer.y = -(event.clientY / innerHeight) * 2 + 1;
+    }
+
+    renderer.domElement.addEventListener('pointermove', event => {
+      updatePointer(event);
+    });
+    renderer.domElement.addEventListener('pointerdown', event => {
+      updatePointer(event);
+      beginCharge(event);
+    });
+    renderer.domElement.addEventListener('pointerup', event => {
+      updatePointer(event);
+      launch();
+    });
+    renderer.domElement.addEventListener('pointercancel', () => {
+      state.charging = false;
+      state.charge = .04;
+      ui.charge.style.width = '0%';
+    });
+    renderer.domElement.addEventListener('contextmenu', event => event.preventDefault());
+
+    addEventListener('keydown', event => {
+      if (event.code === 'Space') {
+        event.preventDefault();
+        if (!event.repeat) beginCharge();
+      } else if (event.code === 'Escape') {
+        exitGame();
+      }
+    });
+    addEventListener('keyup', event => {
+      if (event.code === 'Space') {
+        event.preventDefault();
+        launch();
+      }
+    });
+
+    document.querySelector('#startButton').addEventListener('click', startGame);
+    document.querySelector('#againButton').addEventListener('click', startGame);
+    document.querySelector('#restartButton').addEventListener('click', resetGame);
+    document.querySelector('#exitButton').addEventListener('click', exitGame);
+    ui.burst.addEventListener('animationend', event => {
+      if (event.animationName === 'device-arrive') {
+        ui.burst.classList.remove('active');
+      }
+    });
+    ui.sound.addEventListener('click', () => {
+      state.muted = !state.muted;
+      ui.sound.setAttribute('aria-label', state.muted ? 'Enable sound' : 'Mute sound');
+      ui.sound.style.opacity = state.muted ? '.42' : '1';
+      ui.sound.querySelector('.sound-wave').style.display = state.muted ? 'none' : '';
+      if (!state.muted) tone(330, .15, 'sine', .025, 80);
+    });
+
+    addEventListener('resize', () => {
+      configureCamera();
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), .04);
+      const time = clock.elapsedTime;
+
+      state.stars.rotation.z = Math.sin(time * .025) * .004;
+      state.stars.position.x = Math.sin(time * .018) * .22;
+      state.stars.position.y = Math.cos(time * .014) * .12;
+      wanderGlow.position.x = Math.sin(time * .32) * 3.2 + Math.sin(time * .13) * .7;
+      wanderGlow.position.z = Math.cos(time * .27) * 2.25;
+      wanderGlow.material.opacity = .82;
+      redLight.position.x = wanderGlow.position.x;
+      redLight.position.z = wanderGlow.position.z - 1.15;
+      fieldSpotlight.position.x = wanderGlow.position.x;
+      fieldSpotlight.position.z = wanderGlow.position.z - 1.15;
+      fieldSpotlight.target.position.x = wanderGlow.position.x;
+      fieldSpotlight.target.position.z = wanderGlow.position.z - 1.15;
+
+      holes.forEach(hole => {
+        const distance = Math.hypot(
+          hole.group.position.x - wanderGlow.position.x,
+          hole.group.position.z - wanderGlow.position.z
+        );
+        const proximity = Math.max(0, 1 - distance / 3.25);
+        const illumination = proximity * proximity * (3 - 2 * proximity);
+        hole.well.material.color.copy(holeDark).lerp(holeLit, illumination);
+        hole.well.material.emissiveIntensity = .55 + illumination * 2.85;
+        hole.halo.scale.setScalar(1);
+        hole.halo.material.opacity = .07 + illumination * .48;
+      });
+
+      state.targets.forEach(cone => {
+        const data = cone.userData;
+        const age = Math.max(0, time - data.spawn);
+        const spawnScale = Math.min(1, age / 1.65);
+        const eased = 1 - Math.pow(1 - spawnScale, 3);
+        if (!data.hit && !data.accepting) {
+          const horizontalGrowth = .04 + eased * .88;
+          cone.scale.set(
+            horizontalGrowth + Math.sin(time * 1.7 + data.seed) * .035 * eased,
+            Math.max(.01, eased),
+            horizontalGrowth + Math.cos(time * 1.4 + data.seed) * .035 * eased
+          );
+          cone.rotation.y = Math.sin(time * .65 + data.seed) * .16;
+          cone.rotation.z = Math.sin(time * .9 + data.seed) * .035;
+          data.mouth.scale.set(1, .82, 1);
+          data.throat.scale.set(1, .82, 1);
+        } else {
+          data.pulse = Math.max(0, data.pulse - dt * 1.7);
+          if (data.hit) data.retreat = Math.min(1, data.retreat + dt * .62);
+          applyConeRetreat(cone, data.retreat);
+        }
+        data.mat.uniforms.time.value = time + data.seed;
+        data.mat.uniforms.pulse.value = data.pulse;
+      });
+
+      // Slow free motion with local collision repulsion in the player-side two-row band.
+      const movingDiscs = state.discs.filter(disc => time - disc.userData.birth > 1.05);
+      movingDiscs.forEach(disc => {
+        const velocity = disc.userData.velocity;
+        const turn = Math.sin(time * .31 + disc.userData.wanderSeed) * .055 * dt;
+        velocity.rotateAround(new THREE.Vector2(), turn);
+        const speed = THREE.MathUtils.clamp(velocity.length(), .22, .42);
+        velocity.setLength(speed);
+        disc.position.x += velocity.x * dt;
+        disc.position.z += velocity.y * dt;
+        if (disc.position.x < -4.45 || disc.position.x > 4.45) {
+          disc.position.x = THREE.MathUtils.clamp(disc.position.x, -4.45, 4.45);
+          velocity.x *= -1;
+        }
+        if (disc.position.z < 2.05 || disc.position.z > 3.8) {
+          disc.position.z = THREE.MathUtils.clamp(disc.position.z, 2.05, 3.8);
+          velocity.y *= -1;
+        }
+      });
+
+      for (let i = 0; i < movingDiscs.length; i++) {
+        for (let j = i + 1; j < movingDiscs.length; j++) {
+          const a = movingDiscs[i];
+          const b = movingDiscs[j];
+          let dx = b.position.x - a.position.x;
+          let dz = b.position.z - a.position.z;
+          let distance = Math.hypot(dx, dz);
+          const avoidanceDistance = 1.75;
+          const contactDistance = 1.18;
+          if (distance >= avoidanceDistance) continue;
+          if (distance < .001) {
+            dx = Math.cos(a.userData.wanderSeed);
+            dz = Math.sin(a.userData.wanderSeed);
+            distance = 1;
+          }
+          const normal = new THREE.Vector2(dx / distance, dz / distance);
+          const separation = Math.max(0, contactDistance - distance);
+          if (separation > 0) {
+            a.position.x -= normal.x * separation * .5;
+            a.position.z -= normal.y * separation * .5;
+            b.position.x += normal.x * separation * .5;
+            b.position.z += normal.y * separation * .5;
+          }
+          const relativeSpeed = b.userData.velocity.clone().sub(a.userData.velocity).dot(normal);
+          if (relativeSpeed < 0) {
+            const impulse = relativeSpeed * .82;
+            a.userData.velocity.addScaledVector(normal, impulse);
+            b.userData.velocity.addScaledVector(normal, -impulse);
+          }
+          const repulsion = (1 - distance / avoidanceDistance) * .045;
+          a.userData.velocity.addScaledVector(normal, -repulsion);
+          b.userData.velocity.addScaledVector(normal, repulsion);
+        }
+      }
+
+      state.discs.forEach((disc, index) => {
+        const age = time - disc.userData.birth;
+        const emerge = Math.min(1, age / .82);
+        const e = 1 - Math.pow(1 - emerge, 3);
+        const seed = disc.userData.wanderSeed;
+        const isActive = disc === state.activeDisc;
+        const floatTarget = -.18 + e * ((isActive ? 1.7 : .66) + .18);
+        disc.userData.floatY = THREE.MathUtils.damp(
+          disc.userData.floatY,
+          floatTarget,
+          isActive ? 5.5 : 3.8,
+          dt
+        );
+        disc.position.y = disc.userData.floatY + e * Math.sin(time * 1.35 + seed) * .045;
+        disc.scale.setScalar(Math.max(.05, e * disc.userData.baseScale));
+        disc.rotation.x = Math.sin(time * (isActive ? .41 : .27) + seed) * (isActive ? .3 : .14);
+        disc.rotation.y = time * (isActive ? .38 : .19) + seed;
+        disc.rotation.z = Math.cos(time * (isActive ? .34 : .23) + seed * 1.3) * (isActive ? .26 : .12);
+      });
+
+      if (state.charging) {
+        const elapsed = (performance.now() - state.chargeStart) / 1450;
+        const phase = elapsed % 2;
+        const triangle = phase <= 1 ? phase : 2 - phase;
+        state.charge = .04 + triangle * .96;
+        ui.charge.style.width = `${state.charge * 100}%`;
+        if (state.activeDisc) {
+          state.activeDisc.scale.setScalar(state.activeDisc.userData.baseScale * (1 + state.charge * .075));
+        }
+      }
+
+      updateAim();
+      if (reticle.visible) {
+        reticle.rotation.y = time * .7;
+        reticle.position.y = .1 + Math.sin(time * 3) * .015;
+      }
+
+      state.flights.slice().forEach(f => {
+        f.progress = Math.min(1, f.progress + dt / f.duration);
+        const p = f.progress;
+        const entryStart = .72;
+        if (f.target) {
+          if (p <= entryStart) {
+            const approach = p / entryStart;
+            const preEntry = THREE.MathUtils.smoothstep(approach, .52, 1);
+            const alignment = THREE.MathUtils.smoothstep(approach, .5, 1);
+            const mouthCenter = coneMouthCenter(f.target);
+            f.disc.position.lerpVectors(f.start, mouthCenter, approach);
+            f.disc.position.y += Math.sin(approach * Math.PI) * (2.3 + f.power * 1.2);
+            f.disc.scale.setScalar(f.startScale * (1 - preEntry * .4));
+            f.disc.quaternion.copy(f.startQuaternion).slerp(
+              coneMouthDiscQuaternion(f.target, f.entryTilt),
+              alignment
+            );
+          } else {
+            const entryRaw = Math.min(
+              1,
+              (p - entryStart) / (1 - entryStart)
+            );
+            f.target.userData.pulse = entryRaw;
+            f.target.userData.accepting = true;
+            f.target.userData.retreat = entryRaw;
+            const remaining = applyConeRetreat(f.target, entryRaw);
+            f.disc.position.copy(coneMouthCenter(f.target));
+            f.disc.scale.setScalar(f.startScale * .6 * remaining);
+            f.disc.quaternion.copy(coneMouthDiscQuaternion(f.target, f.entryTilt));
+          }
+        } else {
+          f.disc.position.lerpVectors(f.start, f.end, p);
+          f.disc.position.y += Math.sin(p * Math.PI) * (2.3 + f.power * 1.2);
+          f.disc.rotation.x += dt * .82;
+          f.disc.rotation.y += dt * .3;
+          f.disc.rotation.z += dt * .38;
+        }
+        if (!f.target && p > .76) {
+          const sink = (p - .76) / .24;
+          f.disc.scale.setScalar(
+            f.disc.userData.baseScale * Math.max(.025, 1 - sink)
+          );
+        }
+        if (p >= 1) resolveFlight(f);
+      });
+
+      const driftX = pointer.x * .28;
+      const driftY = pointer.y * .12;
+      camera.position.x += (driftX - camera.position.x) * .012;
+      camera.rotation.z += (-pointer.x * .006 - camera.rotation.z) * .02;
+      key.position.x = -5 + Math.sin(time * .18) * 2;
+
+      renderer.render(scene, camera);
+    }
+
+    updateHUD();
+    renderHighScores();
+    animate();
+  </script>
+</body>
+</html>
