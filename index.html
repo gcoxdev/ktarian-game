@@ -219,6 +219,128 @@
       pointer-events: auto;
     }
 
+    .settings-panel {
+      position: absolute;
+      right: clamp(18px, 3.2vw, 58px);
+      bottom: clamp(82px, 11vh, 112px);
+      width: min(330px, calc(100vw - 32px));
+      padding: 20px;
+      color: #f4f1ff;
+      background:
+        linear-gradient(135deg, rgba(119, 106, 255, .12), transparent 42%),
+        rgba(5, 5, 17, .94);
+      border: 1px solid rgba(157, 149, 255, .28);
+      box-shadow: 0 20px 55px rgba(0, 0, 0, .58), inset 0 0 30px rgba(100, 86, 230, .05);
+      backdrop-filter: blur(16px);
+      clip-path: polygon(0 12px, 12px 0, calc(100% - 34px) 0, 100% 22px, 100% 100%, 0 100%);
+      pointer-events: auto;
+      animation: settings-arrive .25s cubic-bezier(.16, 1, .3, 1) both;
+    }
+
+    .settings-panel[hidden] { display: none; }
+
+    .settings-panel__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 14px;
+      border-bottom: 1px solid rgba(157, 149, 255, .16);
+    }
+
+    .settings-panel__title {
+      margin: 0;
+      color: #aaa3ff;
+      font: 600 9px/1 "Michroma", sans-serif;
+      letter-spacing: .3em;
+      text-transform: uppercase;
+    }
+
+    .settings-panel__close {
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      border: 0;
+      color: rgba(236, 232, 255, .58);
+      background: transparent;
+      font-size: 21px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .setting-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 9px 14px;
+      align-items: center;
+      margin-top: 17px;
+    }
+
+    .setting-row label {
+      color: rgba(236, 232, 255, .66);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+
+    .setting-row output {
+      color: #fff;
+      font: 600 14px/1 "Rajdhani", sans-serif;
+      letter-spacing: .08em;
+    }
+
+    .setting-row input[type="range"] {
+      grid-column: 1 / -1;
+      width: 100%;
+      height: 3px;
+      margin: 2px 0 0;
+      border-radius: 0;
+      accent-color: #8d85ff;
+      cursor: pointer;
+    }
+
+    .setting-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-top: 17px;
+      color: rgba(236, 232, 255, .66);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+
+    .setting-toggle input {
+      width: 34px;
+      height: 18px;
+      margin: 0;
+      accent-color: #8d85ff;
+      cursor: pointer;
+    }
+
+    .settings-reset {
+      width: 100%;
+      margin-top: 19px;
+      padding: 10px 12px;
+      border: 1px solid rgba(145, 137, 255, .34);
+      color: rgba(239, 236, 255, .68);
+      background: rgba(112, 99, 255, .06);
+      font: 600 8px/1 "Michroma", sans-serif;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: color .2s, border-color .2s, background .2s;
+    }
+
+    .settings-reset:hover, .settings-reset:focus-visible {
+      color: #fff;
+      border-color: rgba(160, 152, 255, .72);
+      background: rgba(112, 99, 255, .13);
+      outline: none;
+    }
+
     .icon-button {
       width: 42px;
       height: 42px;
@@ -640,6 +762,11 @@
       to { opacity: 1; transform: translate(-50%, 0); }
     }
 
+    @keyframes settings-arrive {
+      from { opacity: 0; transform: translateY(8px) scale(.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
     @keyframes optical {
       0%, 4%, 8%, 12%, 27%, 44%, 61%, 72%, 79%, 86%, 93%, 100% { opacity: 0; }
       2%, 6%, 10% { opacity: .92; }
@@ -721,7 +848,7 @@
       .status {
         left: 24px;
         bottom: 24px;
-        width: calc(100vw - 238px);
+        width: calc(100vw - 292px);
         transform: none;
         text-align: left;
         animation: none;
@@ -813,7 +940,7 @@
       .status {
         left: 14px;
         bottom: 11px;
-        width: min(430px, calc(100vw - 190px));
+        width: min(430px, calc(100vw - 250px));
         transform: none;
         text-align: left;
         animation: none;
@@ -826,6 +953,22 @@
       }
       .level-progress__labels { margin-top: 5px; font-size: 7px; }
       .edge-actions { right: 14px; bottom: 10px; transform: none; }
+      .settings-panel {
+        right: 14px;
+        bottom: 64px;
+        width: min(310px, calc(100vw - 28px));
+        padding: 16px;
+      }
+    }
+
+    @media (max-width: 720px) and (orientation: portrait) {
+      .settings-panel {
+        left: 50%;
+        right: auto;
+        bottom: 76px;
+        transform: translateX(-50%);
+        animation: none;
+      }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -868,7 +1011,32 @@
       </div>
     </section>
 
+    <section class="settings-panel" id="settingsPanel" aria-labelledby="settingsTitle" hidden>
+      <div class="settings-panel__header">
+        <h2 class="settings-panel__title" id="settingsTitle">Settings</h2>
+        <button class="settings-panel__close" id="settingsClose" aria-label="Close settings">×</button>
+      </div>
+      <label class="setting-toggle">
+        <span>Optical burst on exit</span>
+        <input type="checkbox" id="opticalSetting" checked>
+      </label>
+      <div class="setting-row">
+        <label for="angleSetting">Board angle · X</label>
+        <output id="angleOutput" for="angleSetting">−22°</output>
+        <input type="range" id="angleSetting" min="-22" max="2" step="1" value="-22">
+      </div>
+      <div class="setting-row">
+        <label for="zoomSetting">Zoom level</label>
+        <output id="zoomOutput" for="zoomSetting">100%</output>
+        <input type="range" id="zoomSetting" min="80" max="125" step="1" value="100">
+      </div>
+      <button class="settings-reset" id="settingsReset">Reset defaults</button>
+    </section>
+
     <nav class="edge-actions" aria-label="Game controls">
+      <button class="icon-button" id="settingsButton" aria-label="Open settings" aria-controls="settingsPanel" aria-expanded="false" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/></svg>
+      </button>
       <button class="icon-button" id="soundButton" aria-label="Mute sound" title="Sound">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M11 5 6.5 9H3v6h3.5l4.5 4V5Z"/><path class="sound-wave" d="M15 8.5a5 5 0 0 1 0 7M18 5.5a9 9 0 0 1 0 13"/></svg>
       </button>
@@ -913,7 +1081,7 @@
       <p class="panel__copy" id="endCopy">The optical burst has cleared the pattern.</p>
       <div class="panel__actions">
         <button class="primary" id="againButton">Play again</button>
-        <button class="primary primary--secondary" id="homeButton" hidden>Main screen</button>
+        <button class="primary primary--secondary" id="homeButton" hidden>Exit</button>
       </div>
     </div>
   </section>
@@ -949,9 +1117,39 @@
       endCopy: document.querySelector('#endCopy'),
       burst: document.querySelector('#opticalBurst'),
       sound: document.querySelector('#soundButton'),
+      settingsButton: document.querySelector('#settingsButton'),
+      settingsPanel: document.querySelector('#settingsPanel'),
+      settingsClose: document.querySelector('#settingsClose'),
+      opticalSetting: document.querySelector('#opticalSetting'),
+      angleSetting: document.querySelector('#angleSetting'),
+      angleOutput: document.querySelector('#angleOutput'),
+      zoomSetting: document.querySelector('#zoomSetting'),
+      zoomOutput: document.querySelector('#zoomOutput'),
+      settingsReset: document.querySelector('#settingsReset'),
       scoreList: document.querySelector('#scoreList'),
       timedScoreList: document.querySelector('#timedScoreList')
     };
+
+    const settingsStorageKey = 'ktarian-field-settings-v1';
+    const settings = (() => {
+      let saved = {};
+      try {
+        saved = JSON.parse(localStorage.getItem(settingsStorageKey) || '{}');
+      } catch {}
+      const savedAngle = Number(saved.boardAngle);
+      const savedZoom = Number(saved.zoom);
+      return {
+        opticalDevice: saved.opticalDevice !== false,
+        boardAngle: Math.min(2, Math.max(-22, Number.isFinite(savedAngle) ? savedAngle : -22)),
+        zoom: Math.min(1.25, Math.max(.8, Number.isFinite(savedZoom) && savedZoom ? savedZoom : 1))
+      };
+    })();
+
+    function saveSettings() {
+      try {
+        localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
+      } catch {}
+    }
 
     let renderer;
     try {
@@ -982,7 +1180,7 @@
       const portraitTablet = innerWidth > 720 && innerWidth <= 1024 && aspect <= 1;
       const compactLandscape = innerHeight <= 540 && aspect > 1.25;
       camera.aspect = aspect;
-      camera.zoom = compactLandscape ? 1.42 : 1;
+      camera.zoom = (compactLandscape ? 1.42 : 1) * settings.zoom;
       camera.fov = portraitPhone ? 52 : portraitTablet ? 44 : 40;
       camera.position.set(
         0,
@@ -1003,13 +1201,18 @@
     const tmp = new THREE.Vector3();
     const board = new THREE.Group();
     board.position.z = -1.15;
-    board.rotation.x = THREE.MathUtils.degToRad(-11);
     scene.add(board);
-    board.updateMatrixWorld(true);
-    aimPlane.setFromNormalAndCoplanarPoint(
-      new THREE.Vector3(0, 1, 0).applyQuaternion(board.quaternion).normalize(),
-      board.localToWorld(new THREE.Vector3(0, .13, 0))
-    );
+
+    function applyBoardAngle() {
+      board.rotation.x = THREE.MathUtils.degToRad(settings.boardAngle);
+      board.updateMatrixWorld(true);
+      aimPlane.setFromNormalAndCoplanarPoint(
+        new THREE.Vector3(0, 1, 0).applyQuaternion(board.quaternion).normalize(),
+        board.localToWorld(new THREE.Vector3(0, .13, 0))
+      );
+    }
+
+    applyBoardAngle();
 
     const state = {
       started: false,
@@ -1036,16 +1239,35 @@
       levelHits: 0,
       levelQuota: 1,
       levelConesIssued: 0,
-      scoreRecorded: false
+      scoreRecorded: false,
+      settingsOpen: false
     };
+
+    function syncSettingsUI() {
+      ui.opticalSetting.checked = settings.opticalDevice;
+      ui.angleSetting.value = String(settings.boardAngle);
+      ui.angleOutput.textContent = `${String(settings.boardAngle).replace('-', '−')}°`;
+      ui.zoomSetting.value = String(Math.round(settings.zoom * 100));
+      ui.zoomOutput.textContent = `${Math.round(settings.zoom * 100)}%`;
+    }
+
+    function setSettingsOpen(open) {
+      state.settingsOpen = open;
+      state.charging = false;
+      ui.settingsPanel.hidden = !open;
+      ui.settingsButton.setAttribute('aria-expanded', String(open));
+      ui.settingsButton.setAttribute('aria-label', open ? 'Close settings' : 'Open settings');
+    }
+
+    syncSettingsUI();
 
     // Procedural star field.
     {
       const count = 4800;
       const tiers = [
-        { positions: [], colors: [], size: .165, opacity: 1 },
-        { positions: [], colors: [], size: .27, opacity: 1 },
-        { positions: [], colors: [], size: .44, opacity: 1 }
+        { positions: [], colors: [], size: .19, opacity: 1 },
+        { positions: [], colors: [], size: .32, opacity: 1 },
+        { positions: [], colors: [], size: .52, opacity: 1 }
       ];
       const starCanvas = document.createElement('canvas');
       starCanvas.width = starCanvas.height = 64;
@@ -1069,8 +1291,8 @@
           -depth
         );
         const brightnessRoll = Math.pow(Math.random(), 1.7);
-        const tierLift = tier === tiers[2] ? .1 : tier === tiers[1] ? .045 : 0;
-        const starLightness = .74 + brightnessRoll * .25 + tierLift;
+        const tierLift = tier === tiers[2] ? .08 : tier === tiers[1] ? .035 : 0;
+        const starLightness = .79 + brightnessRoll * .2 + tierLift;
         c.setHSL(
           .6 + Math.random() * .1,
           .18 + Math.random() * .32,
@@ -1106,10 +1328,10 @@
     key.castShadow = true;
     key.shadow.mapSize.set(1024, 1024);
     scene.add(key, key.target);
-    const redLight = new THREE.PointLight(0xff2810, 9, 18, 2);
+    const redLight = new THREE.PointLight(0xff2810, 7.5, 18, 2);
     redLight.position.set(0, 2, 2);
     scene.add(redLight);
-    const fieldSpotlight = new THREE.SpotLight(0xffd6b0, 34, 20, .34, .82, 1.35);
+    const fieldSpotlight = new THREE.SpotLight(0xffd6b0, 28, 20, .34, .82, 1.35);
     fieldSpotlight.position.set(0, 8.5, 0);
     fieldSpotlight.target.position.set(0, 0, 0);
     scene.add(fieldSpotlight, fieldSpotlight.target);
@@ -1150,7 +1372,7 @@
     board.add(rim);
 
     const holes = [];
-    const holeGeo = new THREE.CylinderGeometry(.54, .54, .07, 48);
+    const holeGeo = new THREE.CircleGeometry(.54, 48);
     const haloGeo = new THREE.RingGeometry(.43, .65, 48);
     for (let row = 0; row < 6; row++) {
       for (let col = 0; col < 7; col++) {
@@ -1160,9 +1382,10 @@
         group.position.set(x, 0, z);
         const well = new THREE.Mesh(holeGeo, new THREE.MeshStandardMaterial({
           color: 0x8f1008, emissive: 0xff210c, emissiveIntensity: .95,
-          roughness: .32, metalness: .25
+          roughness: .32, metalness: .25, side: THREE.DoubleSide
         }));
-        well.position.y = -.02;
+        well.rotation.x = -Math.PI / 2;
+        well.position.y = -.015;
         const halo = new THREE.Mesh(haloGeo, new THREE.MeshBasicMaterial({
           color: 0xff3215, transparent: true, opacity: .18, blending: THREE.AdditiveBlending,
           side: THREE.DoubleSide, depthWrite: false
@@ -1191,7 +1414,7 @@
     const glowTexture = new THREE.CanvasTexture(glowCanvas);
     const wanderGlow = new THREE.Mesh(
       new THREE.PlaneGeometry(5.6, 5.6),
-      new THREE.MeshBasicMaterial({ map: glowTexture, transparent: true, opacity: .82, depthWrite: false, blending: THREE.AdditiveBlending })
+      new THREE.MeshBasicMaterial({ map: glowTexture, transparent: true, opacity: .7, depthWrite: false, blending: THREE.AdditiveBlending })
     );
     wanderGlow.rotation.x = -Math.PI / 2;
     wanderGlow.position.y = .06;
@@ -1204,35 +1427,73 @@
       const verts = [];
       const indices = [];
       const uvs = [];
+      const baseRadius = .09 + Math.random() * .025;
+      const flareScale = .69 + Math.random() * .075;
+      const flarePower = 1.78 + Math.random() * .62;
+      const bendStart = .36 + Math.random() * .12;
+      const bendSpan = 1 - bendStart;
+      const bendReach = .92 + Math.random() * .34;
+      const swingPhase = Math.random() * Math.PI * 2;
+      const swingFrequency = 1.25 + Math.random() * .75;
+      const sideSwing = .035 + Math.random() * .13;
+      const depthSwing = .02 + Math.random() * .065;
+      const bulgeCenter = .42 + Math.random() * .18;
+      const bulgeWidth = .12 + Math.random() * .07;
+      const bulgeStrength = Math.random() < .72 ? .025 + Math.random() * .085 : 0;
+      const mouthYawDirection = Math.random() < .5 ? -1 : 1;
+      const mouthYaw = THREE.MathUtils.degToRad(
+        mouthYawDirection * (7 + Math.random() * 16)
+      );
       const curvePoint = v => {
-        const bend = Math.max(0, (v - .38) / .62);
+        const bend = Math.max(0, (v - bendStart) / bendSpan);
         const bendCurve = bend * bend;
         const bendCubic = bendCurve * bend;
+        const midEnvelope = Math.pow(Math.max(0, Math.sin(v * Math.PI)), 1.35);
+        const lateral = Math.sin(v * Math.PI * swingFrequency + swingPhase) * sideSwing * midEnvelope;
+        const depthTwist = Math.cos(v * Math.PI * (swingFrequency + .35) + swingPhase) * depthSwing * midEnvelope;
         return {
-          y: v * 2.5 - bendCurve * .18,
-          z: bendCurve * 1.25 - bendCubic * .3,
+          x: lateral,
+          y: v * 2.5 - bendCurve * .16,
+          z: bendCurve * bendReach - bendCubic * .25 + depthTwist,
           bend,
-          dy: 2.5 - (bend > 0 ? bend * (2 * .18 / .62) : 0),
-          dz: bend > 0 ? (2.5 * bend - .9 * bendCurve) / .62 : 0
+          dy: 2.5 - (bend > 0 ? bend * (.32 / bendSpan) : 0),
+          dz: bend > 0 ? (2 * bend * bendReach - .75 * bendCurve) / bendSpan : 0
         };
       };
       for (let j = 0; j <= rings; j++) {
         const v = j / rings;
         const curve = curvePoint(v);
-        const tangentLength = Math.hypot(curve.dy, curve.dz);
-        const basisY = curve.dz / tangentLength;
-        const basisZ = -curve.dy / tangentLength;
-        const radius = .1 + Math.pow(v, 2.08) * .72 + Math.pow(curve.bend, 4) * .08;
+        const bulgeDistance = (v - bulgeCenter) / bulgeWidth;
+        const midBulge = Math.exp(-bulgeDistance * bulgeDistance) * bulgeStrength;
+        const radius = baseRadius
+          + Math.pow(v, flarePower) * flareScale
+          + Math.pow(curve.bend, 4) * .07
+          + midBulge;
         const sideScale = 1 - Math.pow(curve.bend, 2) * .18;
+        const mouthTurnRaw = Math.min(1, Math.max(0, (v - .58) / .42));
+        const mouthTurn = mouthTurnRaw * mouthTurnRaw * (3 - 2 * mouthTurnRaw);
+        const ringOrientation = new THREE.Quaternion().setFromUnitVectors(
+          new THREE.Vector3(0, 0, 1),
+          new THREE.Vector3(0, curve.dy, curve.dz).normalize()
+        );
+        ringOrientation.multiply(
+          new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            mouthYaw * mouthTurn
+          )
+        );
         for (let i = 0; i <= segments; i++) {
           const u = i / segments;
           const angle = u * Math.PI * 2;
-          const radialX = Math.cos(angle) * radius;
-          const radialSide = Math.sin(angle) * radius * sideScale;
+          const radial = new THREE.Vector3(
+            Math.cos(angle) * radius,
+            Math.sin(angle) * radius * sideScale,
+            0
+          ).applyQuaternion(ringOrientation);
           verts.push(
-            radialX,
-            curve.y + radialSide * basisY,
-            curve.z + radialSide * basisZ
+            curve.x + radial.x,
+            curve.y + radial.y,
+            curve.z + radial.z
           );
           uvs.push(u, v);
         }
@@ -1323,19 +1584,16 @@
 
       const end = curvePoint(1);
       const endTangent = new THREE.Vector3(0, end.dy, end.dz).normalize();
-      const endPosition = new THREE.Vector3(0, end.y, end.z);
+      const endPosition = new THREE.Vector3(end.x, end.y, end.z);
       const bellOrientation = new THREE.Quaternion().setFromUnitVectors(
         new THREE.Vector3(0, 0, 1),
         endTangent
       );
-      const mouth = new THREE.Mesh(
-        new THREE.TorusGeometry(.78, .06, 12, 64),
-        new THREE.MeshStandardMaterial({
-          color: 0xa29ce9,
-          roughness: .72,
-          metalness: .03
-        })
+      bellOrientation.multiply(
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), mouthYaw)
       );
+      // Invisible anchor preserves mouth orientation and scaling without a visible rim.
+      const mouth = new THREE.Group();
       mouth.position.copy(endPosition);
       mouth.quaternion.copy(bellOrientation);
       mouth.scale.y = .82;
@@ -1348,7 +1606,7 @@
 
       const funnelDepth = .78;
       const innerWall = new THREE.Mesh(
-        new THREE.CylinderGeometry(.72, .13, funnelDepth, 64, 8, true),
+        new THREE.CylinderGeometry(.84, .13, funnelDepth, 64, 8, true),
         new THREE.ShaderMaterial({
           side: THREE.BackSide,
           uniforms: {
@@ -1435,16 +1693,16 @@
     function makeDisc() {
       const group = new THREE.Group();
       const profile = [
-        new THREE.Vector2(0, -.09),
-        new THREE.Vector2(.67, -.09),
-        new THREE.Vector2(.72, -.075),
-        new THREE.Vector2(.765, -.035),
-        new THREE.Vector2(.79, .015),
-        new THREE.Vector2(.79, .055),
-        new THREE.Vector2(.765, .105),
-        new THREE.Vector2(.72, .137),
-        new THREE.Vector2(.67, .15),
-        new THREE.Vector2(0, .15)
+        new THREE.Vector2(0, -.045),
+        new THREE.Vector2(.68, -.045),
+        new THREE.Vector2(.735, -.036),
+        new THREE.Vector2(.775, -.014),
+        new THREE.Vector2(.79, .012),
+        new THREE.Vector2(.79, .034),
+        new THREE.Vector2(.775, .058),
+        new THREE.Vector2(.735, .071),
+        new THREE.Vector2(.68, .075),
+        new THREE.Vector2(0, .075)
       ];
       const body = new THREE.Mesh(
         new THREE.LatheGeometry(profile, 64),
@@ -1456,22 +1714,25 @@
       body.castShadow = true;
       group.add(body);
 
-      // Eight solid bands, ordered center-out: pink, red, pink, red, pink, red, pink, red.
+      // Eight solid bands on both faces, center-out: coral, red, coral, red...
       const radii = [.765, .67, .575, .48, .385, .29, .195, .1];
       radii.forEach((radius, outerIndex) => {
-        const pink = outerIndex % 2 === 1;
-        const band = new THREE.Mesh(
-          new THREE.CircleGeometry(radius, 64),
-          new THREE.MeshBasicMaterial({
-            color: pink ? 0xc36f69 : 0x7b100c,
-            transparent: true,
-            opacity: pink ? .98 : .96
-          })
-        );
-        band.rotation.x = -Math.PI / 2;
-        band.position.y = .151 + outerIndex * .0007;
-        band.renderOrder = outerIndex;
-        group.add(band);
+        const coral = outerIndex % 2 === 1;
+        const geometry = new THREE.CircleGeometry(radius, 64);
+        const material = new THREE.MeshBasicMaterial({
+          color: coral ? 0xe98760 : 0x76100c,
+          transparent: true,
+          opacity: coral ? .98 : .96
+        });
+        const topBand = new THREE.Mesh(geometry, material);
+        topBand.rotation.x = -Math.PI / 2;
+        topBand.position.y = .076 + outerIndex * .00045;
+        topBand.renderOrder = outerIndex;
+        const bottomBand = new THREE.Mesh(geometry, material);
+        bottomBand.rotation.x = Math.PI / 2;
+        bottomBand.position.y = -.046 - outerIndex * .00045;
+        bottomBand.renderOrder = outerIndex;
+        group.add(topBand, bottomBand);
       });
 
       const sheen = new THREE.Mesh(
@@ -1482,7 +1743,7 @@
         })
       );
       sheen.rotation.x = -Math.PI / 2;
-      sheen.position.y = .16;
+      sheen.position.y = .081;
       sheen.renderOrder = 10;
       group.add(sheen);
       const halo = new THREE.PointLight(0xa51b12, 2.2, 4.5, 2);
@@ -1844,6 +2105,7 @@
       state.mode = mode;
       state.started = true;
       state.playing = true;
+      setSettingsOpen(false);
       document.body.classList.remove('home-active');
       ui.startOverlay.hidden = true;
       ui.endOverlay.hidden = true;
@@ -1865,7 +2127,7 @@
     }
 
     function updateAim() {
-      if (!state.playing || !state.activeDisc) {
+      if (!state.playing || state.settingsOpen || !state.activeDisc) {
         reticle.visible = false;
         aimLine.visible = false;
         return;
@@ -1888,7 +2150,7 @@
     }
 
     function beginCharge(event) {
-      if (!state.playing || !state.activeDisc || state.transitioning) return;
+      if (!state.playing || state.settingsOpen || !state.activeDisc || state.transitioning) return;
       if (event?.button !== undefined && event.button !== 0) return;
       state.charging = true;
       state.chargeStart = performance.now();
@@ -2084,25 +2346,32 @@
       gameOver();
     }
 
+    function finishExit() {
+      clearObjects();
+      state.started = false;
+      state.transitioning = false;
+      ui.endOverlay.hidden = true;
+      ui.startOverlay.hidden = false;
+      document.body.classList.add('home-active');
+      renderHighScores();
+    }
+
     function exitGame() {
       if (!state.started || ui.burst.classList.contains('active')) return;
       state.playing = false;
       state.charging = false;
+      setSettingsOpen(false);
       recordHighScore();
+      if (!settings.opticalDevice) {
+        finishExit();
+        return;
+      }
       ui.burst.classList.remove('active');
       void ui.burst.offsetWidth;
       ui.burst.classList.add('active');
       tone(70, 1.35, 'sawtooth', .035, 760);
       setTimeout(() => ui.burst.classList.remove('active'), 1850);
-      setTimeout(() => {
-        clearObjects();
-        state.started = false;
-        state.transitioning = false;
-        ui.endOverlay.hidden = true;
-        ui.startOverlay.hidden = false;
-        document.body.classList.add('home-active');
-        renderHighScores();
-      }, 1750);
+      setTimeout(finishExit, 1750);
     }
 
     function updatePointer(event) {
@@ -2132,7 +2401,8 @@
         event.preventDefault();
         if (!event.repeat) beginCharge();
       } else if (event.code === 'Escape') {
-        exitGame();
+        if (state.settingsOpen) setSettingsOpen(false);
+        else exitGame();
       }
     });
     addEventListener('keyup', event => {
@@ -2148,6 +2418,34 @@
     document.querySelector('#homeButton').addEventListener('click', exitGame);
     document.querySelector('#restartButton').addEventListener('click', resetGame);
     document.querySelector('#exitButton').addEventListener('click', exitGame);
+    ui.settingsButton.addEventListener('click', () => setSettingsOpen(!state.settingsOpen));
+    ui.settingsClose.addEventListener('click', () => setSettingsOpen(false));
+    ui.opticalSetting.addEventListener('change', () => {
+      settings.opticalDevice = ui.opticalSetting.checked;
+      saveSettings();
+    });
+    ui.angleSetting.addEventListener('input', () => {
+      settings.boardAngle = Number(ui.angleSetting.value);
+      ui.angleOutput.textContent = `${String(settings.boardAngle).replace('-', '−')}°`;
+      applyBoardAngle();
+      saveSettings();
+    });
+    ui.zoomSetting.addEventListener('input', () => {
+      settings.zoom = Number(ui.zoomSetting.value) / 100;
+      ui.zoomOutput.textContent = `${ui.zoomSetting.value}%`;
+      configureCamera();
+      saveSettings();
+    });
+    ui.settingsReset.addEventListener('click', () => {
+      settings.opticalDevice = true;
+      settings.boardAngle = -22;
+      settings.zoom = 1;
+      syncSettingsUI();
+      applyBoardAngle();
+      configureCamera();
+      saveSettings();
+      tone(280, .16, 'sine', .02, 90);
+    });
     ui.burst.addEventListener('animationend', event => {
       if (event.animationName === 'device-arrive') {
         ui.burst.classList.remove('active');
@@ -2172,7 +2470,7 @@
       const dt = Math.min(clock.getDelta(), .04);
       const time = clock.elapsedTime;
 
-      if (state.playing && state.mode === 'timed' && !state.timerExpired) {
+      if (state.playing && !state.settingsOpen && state.mode === 'timed' && !state.timerExpired) {
         state.timeRemaining = Math.max(0, state.timeRemaining - dt);
         const displayedTime = Math.ceil(state.timeRemaining);
         if (displayedTime !== state.displayedTime) {
@@ -2187,7 +2485,7 @@
       state.stars.position.y = Math.cos(time * .014) * .12;
       wanderGlow.position.x = Math.sin(time * .32) * 3.2 + Math.sin(time * .13) * .7;
       wanderGlow.position.z = Math.cos(time * .27) * 2.25;
-      wanderGlow.material.opacity = .82;
+      wanderGlow.material.opacity = .7;
       redLight.position.x = wanderGlow.position.x;
       redLight.position.z = wanderGlow.position.z - 1.15;
       fieldSpotlight.position.x = wanderGlow.position.x;
