@@ -1672,18 +1672,24 @@
         .normalize();
     }
 
-    function coneMouthDiscQuaternion(cone, entryTilt) {
-      const aligned = new THREE.Quaternion().setFromUnitVectors(
-        new THREE.Vector3(0, 1, 0),
-        coneMouthNormal(cone)
-      );
-      return entryTilt ? aligned.multiply(entryTilt) : aligned;
+    function coneEntryDirection(cone) {
+      const direction = coneMouthNormal(cone);
+      if (direction.lengthSq() < .001) direction.set(0, 0, 1);
+      return direction.normalize();
     }
+
+    const coneEntryDistance = 1.42;
+    const coneEntryStart = .68;
 
     function applyConeRetreat(cone, retreatRaw) {
       const retreat = retreatRaw * retreatRaw * (3 - 2 * retreatRaw);
       const remaining = Math.max(.015, 1 - retreat);
-      cone.scale.set(.92 * remaining, remaining, .92 * remaining);
+      const baseScale = cone.userData.retreatBaseScale;
+      cone.scale.set(
+        (baseScale?.x ?? .92) * remaining,
+        (baseScale?.y ?? 1) * remaining,
+        (baseScale?.z ?? .92) * remaining
+      );
       cone.position.y = -retreat * .16;
       cone.userData.mouth.scale.set(1, .82, 1);
       cone.userData.throat.scale.set(1, .82, 1);
@@ -1916,7 +1922,8 @@
           if (
             h.row > maxRow ||
             occupiedIndices.has(i) ||
-            (h.row === 3 && h.col === 3)
+            (h.row === 3 && h.col === 3) ||
+            pointNearActiveFlight(h.group.position)
           ) return false;
 
           return occupiedHoles.every(existing => {
@@ -2006,6 +2013,204 @@
       return best;
     }
 
+    function flightCurveEnvelope(progress, skew) {
+      return Math.sin(progress * Math.PI) * (
+        1 + skew * (progress * 2 - 1)
+      );
+    }
+
+    function horizontalFlightPoint(start, end, normal, side, skew, progress) {
+      const envelope = flightCurveEnvelope(progress, skew);
+      return new THREE.Vector2(
+        THREE.MathUtils.lerp(start.x, end.x, progress) + normal.x * envelope * side,
+        THREE.MathUtils.lerp(start.z, end.z, progress) + normal.z * envelope * side
+      );
+    }
+
+    function targetHorizontalFlightPoint(
+      start,
+      end,
+      normal,
+      side,
+      entryDirection,
+      progress
+    ) {
+      const p0 = new THREE.Vector2(start.x, start.z);
+      const p3 = new THREE.Vector2(end.x, end.z);
+      const p1 = p0.clone().lerp(p3, .34).addScaledVector(
+        new THREE.Vector2(normal.x, normal.z),
+        side * 1.25
+      );
+      const p2 = p3.clone().addScaledVector(
+        new THREE.Vector2(entryDirection.x, entryDirection.z),
+        coneEntryDistance
+      );
+      const inverse = 1 - progress;
+      return p0.multiplyScalar(inverse * inverse * inverse)
+        .addScaledVector(p1, 3 * inverse * inverse * progress)
+        .addScaledVector(p2, 3 * inverse * progress * progress)
+        .addScaledVector(p3, progress * progress * progress);
+    }
+
+    function coneFlightObstacles(target = null, includeTargetBody = false) {
+      return state.targets
+        .map(cone => {
+          const base = new THREE.Vector2(cone.position.x, cone.position.z);
+          const mouth3 = coneMouthCenter(cone);
+          const mouth = new THREE.Vector2(mouth3.x, mouth3.z);
+          const samples = [
+            { point: base, radius: .88 },
+            { point: base.clone().lerp(mouth, .52), radius: 1.15 },
+            { point: mouth, radius: 1.48 }
+          ];
+          if (cone !== target) return samples;
+          return includeTargetBody
+            ? [samples[0], samples[1], { point: mouth, radius: .76 }]
+            : [];
+        })
+        .flat();
+    }
+
+    function chooseFlightCurveSide(start, end, normal, skew, target) {
+      const distance = new THREE.Vector2(end.x - start.x, end.z - start.z).length();
+      const preferredDirection = Math.random() < .5 ? -1 : 1;
+      const baseArc = .32 + Math.random() * .24 + Math.min(.16, distance * .025);
+      const candidates = [];
+      for (let step = 0; step < 4; step++) {
+        const magnitude = Math.min(1.72, baseArc + step * .36);
+        candidates.push(preferredDirection * magnitude, -preferredDirection * magnitude);
+      }
+
+      const obstacles = coneFlightObstacles(target, true);
+      const targetMouth3 = target ? coneMouthCenter(target) : null;
+      const targetMouth = targetMouth3
+        ? new THREE.Vector2(targetMouth3.x, targetMouth3.z)
+        : null;
+      const targetNormal3 = target ? coneEntryDirection(target) : null;
+      const targetFacing = targetNormal3
+        ? new THREE.Vector2(targetNormal3.x, targetNormal3.z).normalize()
+        : null;
+
+      let bestSide = candidates[0];
+      let bestClearance = -Infinity;
+      for (const side of candidates) {
+        let clearance = Infinity;
+        for (let sample = 1; sample < 18; sample++) {
+          const progress = sample / 18;
+          const point = target
+            ? targetHorizontalFlightPoint(
+                start,
+                end,
+                normal,
+                side,
+                coneEntryDirection(target),
+                progress
+              )
+            : horizontalFlightPoint(start, end, normal, side, skew, progress);
+          const edgeClearance = Math.min(
+            5.05 - Math.abs(point.x),
+            4.25 - Math.abs(point.y)
+          );
+          clearance = Math.min(clearance, edgeClearance);
+          obstacles.forEach(obstacle => {
+            clearance = Math.min(
+              clearance,
+              point.distanceTo(obstacle.point) - obstacle.radius
+            );
+          });
+          if (targetMouth && targetFacing && progress > .55) {
+            const frontProgress = (progress - .55) / .45;
+            const requiredFront = THREE.MathUtils.lerp(-.34, .08, frontProgress);
+            const frontDistance = point.clone().sub(targetMouth).dot(targetFacing);
+            clearance = Math.min(clearance, frontDistance - requiredFront);
+          }
+        }
+        if (clearance > bestClearance) {
+          bestClearance = clearance;
+          bestSide = side;
+        }
+        if (clearance >= .08) return side;
+      }
+      return bestSide;
+    }
+
+    function applyLiveConeAvoidance(flight, progress) {
+      const position = new THREE.Vector2(flight.disc.position.x, flight.disc.position.z);
+      const correction = new THREE.Vector2();
+      coneFlightObstacles(flight.target, true).forEach(obstacle => {
+        const away = position.clone().sub(obstacle.point);
+        let distance = away.length();
+        if (distance >= obstacle.radius) return;
+        if (distance < .001) {
+          away.set(flight.curveNormal.x, flight.curveNormal.z);
+          distance = 1;
+        } else {
+          away.divideScalar(distance);
+        }
+        correction.addScaledVector(away, obstacle.radius - distance + .06);
+      });
+      if (flight.target && progress > .55) {
+        const mouth3 = coneMouthCenter(flight.target);
+        const normal3 = coneEntryDirection(flight.target);
+        const mouth = new THREE.Vector2(mouth3.x, mouth3.z);
+        const facing = new THREE.Vector2(normal3.x, normal3.z).normalize();
+        const requiredFront = THREE.MathUtils.lerp(
+          -.34,
+          .08,
+          (progress - .55) / .45
+        );
+        const frontDistance = position.clone().sub(mouth).dot(facing);
+        if (frontDistance < requiredFront) {
+          correction.addScaledVector(
+            facing,
+            requiredFront - frontDistance + .05
+          );
+        }
+      }
+      if (correction.lengthSq() < .0001) return;
+      correction.clampLength(0, .72);
+      const endpointFade = Math.min(1, Math.sin(progress * Math.PI) * 2.8);
+      flight.disc.position.x += correction.x * endpointFade;
+      flight.disc.position.z += correction.y * endpointFade;
+    }
+
+    function pointNearActiveFlight(position) {
+      return state.flights.some(flight => {
+        const end = flight.end;
+        const currentCurveProgress = flight.target
+          ? Math.min(1, flight.progress / coneEntryStart)
+          : flight.progress;
+        for (let sample = 0; sample <= 8; sample++) {
+          const progress = THREE.MathUtils.lerp(
+            currentCurveProgress,
+            1,
+            sample / 8
+          );
+          const point = flight.target
+            ? targetHorizontalFlightPoint(
+                flight.start,
+                end,
+                flight.curveNormal,
+                flight.curveSide,
+                flight.targetEntryDirection,
+                progress
+              )
+            : horizontalFlightPoint(
+                flight.start,
+                end,
+                flight.curveNormal,
+                flight.curveSide,
+                flight.curveSkew,
+                progress
+              );
+          if (Math.hypot(point.x - position.x, point.y - position.z) < 1.45) {
+            return true;
+          }
+        }
+        return false;
+      });
+    }
+
     function spawnCone(delay = 0, generation = state.generation) {
       setTimeout(() => {
         if (!state.playing || state.transitioning || generation !== state.generation) return;
@@ -2013,7 +2218,12 @@
         const liveCount = state.targets.filter(target => !target.userData.hit).length;
         if (liveCount >= capacity) return;
         const chosen = availableHole(3);
-        if (!chosen) return;
+        if (!chosen) {
+          if (state.flights.length) {
+            spawnCone(randomDelay(280, 520), generation);
+          }
+          return;
+        }
         const cone = makeCone();
         cone.position.copy(chosen.h.group.position);
         cone.userData.holeIndex = chosen.i;
@@ -2203,6 +2413,7 @@
       });
       if (target) {
         target.userData.reserved = true;
+        target.userData.retreatBaseScale = target.scale.clone();
         destination.copy(coneMouthCenter(target));
       }
       const missHole = target
@@ -2219,6 +2430,26 @@
       }
 
       const launchedDisc = state.activeDisc;
+      const flightDirection = destination.clone().sub(launchedDisc.position).setY(0);
+      const flightDistance = flightDirection.length();
+      const curveNormal = flightDistance > .001
+        ? new THREE.Vector3(-flightDirection.z, 0, flightDirection.x).normalize()
+        : new THREE.Vector3(1, 0, 0);
+      const curveSkew = (Math.random() - .5) * .42;
+      const curveSide = chooseFlightCurveSide(
+        launchedDisc.position,
+        destination,
+        curveNormal,
+        curveSkew,
+        target
+      );
+      const spinAxis = new THREE.Vector3(
+        Math.random() - .5,
+        Math.random() - .5,
+        Math.random() - .5
+      );
+      if (spinAxis.lengthSq() < .01) spinAxis.set(.4, .7, .2);
+      spinAxis.normalize();
       state.discs = state.discs.filter(disc => disc !== launchedDisc);
       state.activeDisc = state.discs[0] || null;
       state.flights.push({
@@ -2230,16 +2461,17 @@
         duration: target
           ? 2.05 + (1 - state.charge) * .5
           : 1.12 + (1 - state.charge) * .48,
-        power: state.charge,
+        curveNormal,
+        curveLift: target
+          ? .14 + Math.random() * .42
+          : .1 + Math.random() * .34,
+        curveSide,
+        curveSkew,
+        spinAxis,
+        spinSpeed: (Math.random() < .5 ? -1 : 1) * (.22 + Math.random() * .34),
         startScale: launchedDisc.scale.x,
-        startQuaternion: launchedDisc.quaternion.clone(),
-        entryTilt: target
-          ? new THREE.Quaternion().setFromEuler(new THREE.Euler(
-              THREE.MathUtils.degToRad(randomDelay(-15, 15)),
-              0,
-              THREE.MathUtils.degToRad(randomDelay(-10, 10))
-            ))
-          : null,
+        entryQuaternion: null,
+        targetEntryDirection: target ? coneEntryDirection(target) : null,
         missHoleIndex: missHole?.index ?? null
       });
       state.charge = .04;
@@ -2250,6 +2482,31 @@
       tone(230, .42, 'sawtooth', .027, 260);
     }
 
+    function placeOnFlightCurve(flight, end, progress) {
+      flight.disc.position.lerpVectors(flight.start, end, progress);
+      const curveEnvelope = flightCurveEnvelope(progress, flight.curveSkew);
+      flight.disc.position.y += curveEnvelope * flight.curveLift;
+      flight.disc.position.addScaledVector(
+        flight.curveNormal,
+        curveEnvelope * flight.curveSide
+      );
+    }
+
+    function placeOnTargetFlightCurve(flight, progress) {
+      const end = flight.end;
+      const entryDirection = flight.targetEntryDirection;
+      const p0 = flight.start;
+      const p3 = end;
+      const p1 = p0.clone().lerp(p3, .34)
+        .addScaledVector(flight.curveNormal, flight.curveSide * 1.25);
+      p1.y += flight.curveLift;
+      const p2 = p3.clone().addScaledVector(entryDirection, coneEntryDistance);
+      const inverse = 1 - progress;
+      flight.disc.position.copy(p0).multiplyScalar(inverse * inverse * inverse)
+        .addScaledVector(p1, 3 * inverse * inverse * progress)
+        .addScaledVector(p2, 3 * inverse * progress * progress)
+        .addScaledVector(p3, progress * progress * progress);
+    }
     function resolveFlight(flight) {
       board.remove(flight.disc);
       state.flights = state.flights.filter(activeFlight => activeFlight !== flight);
@@ -2512,14 +2769,16 @@
         const spawnScale = Math.min(1, age / 1.65);
         const eased = 1 - Math.pow(1 - spawnScale, 3);
         if (!data.hit && !data.accepting) {
-          const horizontalGrowth = .04 + eased * .88;
-          cone.scale.set(
-            horizontalGrowth + Math.sin(time * 1.7 + data.seed) * .035 * eased,
-            Math.max(.01, eased),
-            horizontalGrowth + Math.cos(time * 1.4 + data.seed) * .035 * eased
-          );
-          cone.rotation.y = Math.sin(time * .65 + data.seed) * .16;
-          cone.rotation.z = Math.sin(time * .9 + data.seed) * .035;
+          if (!data.reserved) {
+            const horizontalGrowth = .04 + eased * .88;
+            cone.scale.set(
+              horizontalGrowth + Math.sin(time * 1.7 + data.seed) * .035 * eased,
+              Math.max(.01, eased),
+              horizontalGrowth + Math.cos(time * 1.4 + data.seed) * .035 * eased
+            );
+            cone.rotation.y = Math.sin(time * .65 + data.seed) * .16;
+            cone.rotation.z = Math.sin(time * .9 + data.seed) * .035;
+          }
           data.mouth.scale.set(1, .82, 1);
           data.throat.scale.set(1, .82, 1);
         } else {
@@ -2625,39 +2884,35 @@
       state.flights.slice().forEach(f => {
         f.progress = Math.min(1, f.progress + dt / f.duration);
         const p = f.progress;
-        const entryStart = .72;
+        const entryStart = coneEntryStart;
         if (f.target) {
           if (p <= entryStart) {
             const approach = p / entryStart;
             const preEntry = THREE.MathUtils.smoothstep(approach, .52, 1);
-            const alignment = THREE.MathUtils.smoothstep(approach, .5, 1);
-            const mouthCenter = coneMouthCenter(f.target);
-            f.disc.position.lerpVectors(f.start, mouthCenter, approach);
-            f.disc.position.y += Math.sin(approach * Math.PI) * (2.3 + f.power * 1.2);
+            placeOnTargetFlightCurve(f, approach);
             f.disc.scale.setScalar(f.startScale * (1 - preEntry * .4));
-            f.disc.quaternion.copy(f.startQuaternion).slerp(
-              coneMouthDiscQuaternion(f.target, f.entryTilt),
-              alignment
-            );
+            f.disc.rotateOnAxis(f.spinAxis, f.spinSpeed * dt);
           } else {
             const entryRaw = Math.min(
               1,
               (p - entryStart) / (1 - entryStart)
             );
-            f.target.userData.pulse = entryRaw;
+            if (!f.entryQuaternion) {
+              f.entryQuaternion = f.disc.quaternion.clone();
+            }
+            const retreatRaw = THREE.MathUtils.smoothstep(entryRaw, 0, 1);
+            f.target.userData.pulse = retreatRaw;
             f.target.userData.accepting = true;
-            f.target.userData.retreat = entryRaw;
-            const remaining = applyConeRetreat(f.target, entryRaw);
+            f.target.userData.retreat = retreatRaw;
+            const remaining = applyConeRetreat(f.target, retreatRaw);
             f.disc.position.copy(coneMouthCenter(f.target));
             f.disc.scale.setScalar(f.startScale * .6 * remaining);
-            f.disc.quaternion.copy(coneMouthDiscQuaternion(f.target, f.entryTilt));
+            f.disc.quaternion.copy(f.entryQuaternion);
           }
         } else {
-          f.disc.position.lerpVectors(f.start, f.end, p);
-          f.disc.position.y += Math.sin(p * Math.PI) * (2.3 + f.power * 1.2);
-          f.disc.rotation.x += dt * .82;
-          f.disc.rotation.y += dt * .3;
-          f.disc.rotation.z += dt * .38;
+          placeOnFlightCurve(f, f.end, p);
+          applyLiveConeAvoidance(f, p);
+          f.disc.rotateOnAxis(f.spinAxis, f.spinSpeed * dt);
         }
         if (!f.target && p > .76) {
           const sink = (p - .76) / .24;
