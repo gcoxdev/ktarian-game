@@ -9,6 +9,14 @@
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Michroma&family=Rajdhani:wght@400;500;600;700&display=swap');
 
+    @font-face {
+      font-family: "Ktarian Turbolift Label";
+      src: url("assets/Helvetica%20Ultra%20Compressed/Helvetica%20Ultra%20Compressed.otf") format("opentype");
+      font-style: normal;
+      font-weight: 400;
+      font-display: block;
+    }
+
     :root {
       color-scheme: dark;
       --ember: #ff3b19;
@@ -1142,6 +1150,8 @@
   <script type="module">
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 
+    await document.fonts.load('52px "Ktarian Turbolift Label"');
+
     const stage = document.querySelector('#stage');
     const ui = {
       level: document.querySelector('#levelValue'),
@@ -1228,6 +1238,26 @@
     scene.fog = new THREE.FogExp2(0x03030b, .027);
 
     const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, .1, 120);
+    scene.add(camera);
+    const liftViewCamera = new THREE.PerspectiveCamera(
+      52,
+      innerWidth / innerHeight,
+      .1,
+      120
+    );
+    liftViewCamera.position.set(.45, 3, -1.45);
+    liftViewCamera.lookAt(0, 2.1, 3.84);
+    const liftViewTarget = new THREE.WebGLRenderTarget(
+      Math.round(innerWidth * Math.min(devicePixelRatio, 2)),
+      Math.round(innerHeight * Math.min(devicePixelRatio, 2)),
+      {
+        depthBuffer: true,
+        stencilBuffer: false,
+        samples: 4
+      }
+    );
+    liftViewTarget.texture.colorSpace = THREE.SRGBColorSpace;
+    let boardInLift = false;
 
     function configureCamera() {
       const aspect = innerWidth / innerHeight;
@@ -1287,7 +1317,13 @@
     scene.add(board);
 
     function applyBoardAngle() {
-      board.rotation.x = THREE.MathUtils.degToRad(settings.boardAngle);
+      board.position.set(0, 0, -1.15);
+      board.scale.setScalar(1);
+      board.rotation.set(
+        THREE.MathUtils.degToRad(settings.boardAngle),
+        0,
+        0
+      );
       board.updateMatrixWorld(true);
       const boardNormal = new THREE.Vector3(0, 1, 0)
         .applyQuaternion(board.quaternion)
@@ -1333,7 +1369,9 @@
       levelQuota: 1,
       levelConesIssued: 0,
       scoreRecorded: false,
-      settingsOpen: false
+      scoreEligible: true,
+      settingsOpen: false,
+      liftTransition: null
     };
 
     function syncSettingsUI() {
@@ -1355,12 +1393,13 @@
     syncSettingsUI();
 
     // Procedural star field.
+    let starTexture;
     {
       const count = 4800;
       const tiers = [
-        { positions: [], colors: [], size: .19, opacity: 1 },
-        { positions: [], colors: [], size: .32, opacity: 1 },
-        { positions: [], colors: [], size: .52, opacity: 1 }
+        { positions: [], colors: [], size: .22, opacity: 1 },
+        { positions: [], colors: [], size: .38, opacity: 1 },
+        { positions: [], colors: [], size: .62, opacity: 1 }
       ];
       const starCanvas = document.createElement('canvas');
       starCanvas.width = starCanvas.height = 64;
@@ -1372,7 +1411,7 @@
       starGradient.addColorStop(1, 'rgba(255,255,255,0)');
       starContext.fillStyle = starGradient;
       starContext.fillRect(0, 0, 64, 64);
-      const starTexture = new THREE.CanvasTexture(starCanvas);
+      starTexture = new THREE.CanvasTexture(starCanvas);
       const c = new THREE.Color();
       for (let i = 0; i < count; i++) {
         const depth = 25 + Math.random() * 58;
@@ -1380,12 +1419,12 @@
         const tier = sizeRoll > .95 ? tiers[2] : sizeRoll > .72 ? tiers[1] : tiers[0];
         tier.positions.push(
           (Math.random() - .5) * depth * 2.05,
-          (Math.random() - .5) * depth * 1.28 + 5,
+          (Math.random() - .5) * depth * 1.28,
           -depth
         );
         const brightnessRoll = Math.pow(Math.random(), 1.7);
         const tierLift = tier === tiers[2] ? .08 : tier === tiers[1] ? .035 : 0;
-        const starLightness = .79 + brightnessRoll * .2 + tierLift;
+        const starLightness = .82 + brightnessRoll * .18 + tierLift;
         c.setHSL(
           .6 + Math.random() * .1,
           .18 + Math.random() * .32,
@@ -1406,11 +1445,645 @@
           map: starTexture,
           alphaTest: .06,
           depthWrite: false,
+          fog: true,
+          toneMapped: false,
           vertexColors: true
         })));
       });
-      scene.add(starField);
+      camera.add(starField);
       state.stars = starField;
+    }
+
+    const spaceBackground = new THREE.Color(0x020208);
+    const spaceFogColor = new THREE.Color(0x03030b);
+    const spaceFogDensity = .015;
+    const liftBackground = new THREE.Color(0x52636c);
+    const liftFogColor = new THREE.Color(0x586a73);
+    const liftFogDensity = .027;
+    const prefersReducedMotion = matchMedia(
+      '(prefers-reduced-motion: reduce)'
+    );
+
+    function makeLiftMaterial(
+      color,
+      {
+        emissive = 0x000000,
+        emissiveIntensity = 0,
+        roughness = .72,
+        metalness = .08
+      } = {}
+    ) {
+      return new THREE.MeshStandardMaterial({
+        color,
+        emissive,
+        emissiveIntensity,
+        roughness,
+        metalness
+      });
+    }
+
+    function makeLiftBox(size, position, material) {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(size.x, size.y, size.z),
+        material
+      );
+      mesh.position.copy(position);
+      return mesh;
+    }
+
+    const liftBrownMaterial = makeLiftMaterial(0x525061, {
+      emissive: 0x34323e,
+      emissiveIntensity: .58,
+      roughness: .98
+    });
+    const liftDoorMaterial = makeLiftMaterial(0xc07660, {
+      emissive: 0x914735,
+      emissiveIntensity: .72,
+      roughness: .9
+    });
+    const liftDoorSeamMaterial = new THREE.MeshBasicMaterial({
+      color: 0x67483a,
+      toneMapped: false,
+      side: THREE.DoubleSide
+    });
+    const liftTrimMaterial = makeLiftMaterial(0xb2b398, {
+      emissive: 0x8f907a,
+      emissiveIntensity: .86,
+      roughness: .82
+    });
+    const liftTanMaterial = makeLiftMaterial(0xb49c8c, {
+      emissive: 0x71584b,
+      emissiveIntensity: .46,
+      roughness: .86
+    });
+    const liftLightMaterial = makeLiftMaterial(0xb2b398, {
+      emissive: 0x9deaff,
+      emissiveIntensity: 1.55,
+      roughness: .55
+    });
+    const liftOffWhiteMaterial = makeLiftMaterial(0xb2b398, {
+      emissive: 0x8f907a,
+      emissiveIntensity: .68,
+      roughness: .9
+    });
+    const liftVentMaterial = makeLiftMaterial(0xb2b398, {
+      emissive: 0x8f907a,
+      emissiveIntensity: .68,
+      roughness: .78
+    });
+    const liftFloorMaterial = new THREE.MeshBasicMaterial({
+      color: 0x412d2a,
+      toneMapped: false
+    });
+    const liftCeilingMaterial = makeLiftMaterial(0xb2b398, {
+      emissive: 0xc8f3fa,
+      emissiveIntensity: 1.25,
+      roughness: .62
+    });
+
+    [
+      liftBrownMaterial,
+      liftDoorMaterial,
+      liftTrimMaterial,
+      liftTanMaterial,
+      liftLightMaterial,
+      liftOffWhiteMaterial,
+      liftVentMaterial,
+      liftFloorMaterial,
+      liftCeilingMaterial
+    ].forEach(material => {
+      material.side = THREE.DoubleSide;
+    });
+
+    const liftCinematic = new THREE.Group();
+    liftCinematic.visible = false;
+    scene.add(liftCinematic);
+
+    function makeLiftDisc(radius, y, material, facesDown = false) {
+      const disc = new THREE.Mesh(
+        new THREE.CircleGeometry(radius, 64),
+        material
+      );
+      disc.position.y = y;
+      disc.rotation.x = facesDown ? Math.PI / 2 : -Math.PI / 2;
+      return disc;
+    }
+
+    function makeLiftSector(
+      start,
+      length,
+      bottomY,
+      topY,
+      bottomRadius,
+      topRadius,
+      material,
+      centerZ = 0
+    ) {
+      const geometry = new THREE.CylinderGeometry(
+        topRadius,
+        bottomRadius,
+        topY - bottomY,
+        Math.max(4, Math.ceil(length * 24)),
+        1,
+        true,
+        start,
+        length
+      );
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(0, (bottomY + topY) / 2, centerZ);
+      return mesh;
+    }
+
+    const liftPanelSpans = [
+      [25, 20],
+      [45, 45],
+      [90, 45],
+      [135, 45],
+      [180, 45],
+      [225, 45],
+      [270, 45],
+      [315, 20]
+    ].map(([start, length]) => [
+      THREE.MathUtils.degToRad(start),
+      THREE.MathUtils.degToRad(length)
+    ]);
+    const panelGap = THREE.MathUtils.degToRad(1.2);
+
+    function addCabinPanel(group, start, length) {
+      const insetStart = start + panelGap / 2;
+      const insetLength = length - panelGap;
+      group.add(makeLiftSector(
+        insetStart,
+        insetLength,
+        -.04,
+        .76,
+        4.205,
+        4.205,
+        liftBrownMaterial
+      ));
+      for (let i = 0; i < 4; i++) {
+        const y = .08 + i * .17;
+        group.add(makeLiftSector(
+          insetStart,
+          insetLength,
+          y,
+          y + .11,
+          4.12,
+          4.2,
+          liftVentMaterial
+        ));
+      }
+      group.add(
+        makeLiftSector(insetStart, insetLength, .74, 1.9, 4.2, 4.2, liftBrownMaterial),
+        makeLiftSector(insetStart, insetLength, 1.9, 2.0, 4.2, 4.2, liftTrimMaterial),
+        makeLiftSector(insetStart, insetLength, 2.0, 2.72, 4.2, 4.04, liftBrownMaterial),
+        makeLiftSector(insetStart, insetLength, 2.72, 2.82, 4.04, 4.01, liftLightMaterial),
+        makeLiftSector(insetStart, insetLength, 2.82, 3.34, 4.01, 3.82, liftOffWhiteMaterial),
+        makeLiftSector(insetStart, insetLength, 3.34, 3.44, 3.82, 3.77, liftLightMaterial),
+        makeLiftSector(insetStart, insetLength, 3.44, 3.98, 3.77, 3.52, liftOffWhiteMaterial),
+        makeLiftSector(insetStart, insetLength, 3.98, 4.1, 3.52, 3.46, liftTanMaterial),
+        makeLiftSector(insetStart, insetLength, 4.1, 4.56, 3.46, 3.14, liftOffWhiteMaterial),
+        makeLiftSector(insetStart, insetLength, 4.56, 4.68, 3.14, 3.06, liftTanMaterial)
+      );
+    }
+
+    liftPanelSpans.forEach(([start, length]) => {
+      addCabinPanel(liftCinematic, start, length);
+    });
+
+    const liftRibAngles = [25, 45, 90, 135, 180, 225, 270, 315, 335];
+    liftRibAngles.forEach(degrees => {
+      const angle = THREE.MathUtils.degToRad(degrees);
+      const ribPoints = [
+        [4.2, .65],
+        [4.2, 1.9],
+        [4.04, 2.72],
+        [3.82, 3.34],
+        [3.52, 3.98],
+        [3.14, 4.56],
+        [3.06, 4.68]
+      ].map(([radius, y]) => new THREE.Vector3(
+        Math.sin(angle) * radius,
+        y,
+        Math.cos(angle) * radius
+      ));
+      const rib = new THREE.Mesh(
+        new THREE.TubeGeometry(
+          new THREE.CatmullRomCurve3(ribPoints),
+          20,
+          .065,
+          5,
+          false
+        ),
+        liftTrimMaterial
+      );
+      liftCinematic.add(rib);
+    });
+
+    liftCinematic.add(
+      makeLiftDisc(4.18, -.03, liftFloorMaterial),
+      makeLiftDisc(3.04, 4.69, liftCeilingMaterial, true)
+    );
+
+    function makeRoundedDoorFrame() {
+      const outer = new THREE.Shape();
+      outer.moveTo(-1.79, .02);
+      outer.lineTo(-1.79, 3.96);
+      outer.quadraticCurveTo(-1.79, 4.34, -1.41, 4.34);
+      outer.lineTo(1.41, 4.34);
+      outer.quadraticCurveTo(1.79, 4.34, 1.79, 3.96);
+      outer.lineTo(1.79, .02);
+      outer.closePath();
+      const opening = new THREE.Path();
+      opening.moveTo(-1.38, .16);
+      opening.lineTo(-1.38, 3.88);
+      opening.quadraticCurveTo(-1.38, 4.06, -1.2, 4.06);
+      opening.lineTo(1.2, 4.06);
+      opening.quadraticCurveTo(1.38, 4.06, 1.38, 3.88);
+      opening.lineTo(1.38, .16);
+      opening.closePath();
+      outer.holes.push(opening);
+      const frame = new THREE.Mesh(
+        new THREE.ExtrudeGeometry(outer, {
+          depth: .18,
+          bevelEnabled: false,
+          curveSegments: 16
+        }),
+        liftTrimMaterial
+      );
+      frame.position.z = 3.72;
+      return frame;
+    }
+
+    function makeDoorBulkhead() {
+      const bulkhead = new THREE.Group();
+      const z = 3.61;
+      const depth = .16;
+      const upperEdge = 2.25;
+      bulkhead.add(
+        makeLiftBox(
+          new THREE.Vector3(upperEdge * 2, 2.25, depth),
+          new THREE.Vector3(0, 5.17, z),
+          liftTrimMaterial
+        )
+      );
+      return bulkhead;
+    }
+
+    function makeLiftLabel(
+      text,
+      width,
+      edge = 'full',
+      textAlignment = 'center'
+    ) {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(width * 256);
+      canvas.height = 96;
+      const ctx = canvas.getContext('2d');
+      const corners = edge === 'left'
+        ? [40, 0, 0, 40]
+        : edge === 'right'
+          ? [0, 40, 40, 0]
+          : 40;
+      ctx.fillStyle = '#67483a';
+      ctx.beginPath();
+      ctx.roundRect(3, 8, canvas.width - 6, 80, corners);
+      ctx.fill();
+      const textX = textAlignment === 'left'
+        ? 17
+        : textAlignment === 'right'
+          ? canvas.width - 17
+          : canvas.width / 2;
+      ctx.fillStyle = '#ddd7c9';
+      ctx.font = '52px "Ktarian Turbolift Label"';
+      ctx.textAlign = textAlignment;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, textX, 49);
+      const labelTexture = new THREE.CanvasTexture(canvas);
+      labelTexture.colorSpace = THREE.SRGBColorSpace;
+      labelTexture.needsUpdate = true;
+      const material = new THREE.MeshBasicMaterial({
+        map: labelTexture,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        fog: false,
+        toneMapped: false,
+        side: THREE.FrontSide
+      });
+      const label = new THREE.Mesh(
+        new THREE.PlaneGeometry(width, .34),
+        material
+      );
+      label.renderOrder = 20;
+      return label;
+    }
+
+    const liftDoorWidth = 1.42;
+    const liftDoorHeight = 4.04;
+    const liftDoorClosedX = liftDoorWidth / 2;
+    const liftDoorOpenX = 1.38 + liftDoorWidth / 2;
+    const liftDoorZ = 4.03;
+    const liftDoorLeft = makeLiftBox(
+      new THREE.Vector3(liftDoorWidth, liftDoorHeight, .18),
+      new THREE.Vector3(-liftDoorClosedX, 2.08, liftDoorZ),
+      liftDoorMaterial
+    );
+    const liftDoorRight = makeLiftBox(
+      new THREE.Vector3(liftDoorWidth, liftDoorHeight, .18),
+      new THREE.Vector3(liftDoorClosedX, 2.08, liftDoorZ),
+      liftDoorMaterial
+    );
+    const addDoorLabelFace = (
+      door,
+      text,
+      width,
+      x,
+      edge,
+      textAlignment
+    ) => {
+      const label = makeLiftLabel(text, width, edge, textAlignment);
+      label.position.set(x, 1.18, .145);
+      door.add(label);
+      return label;
+    };
+    const liftDoorNumber11 = addDoorLabelFace(
+      liftDoorLeft,
+      '11',
+      .48,
+      .43,
+      'left',
+      'right'
+    );
+    const liftDoorNumber36 = addDoorLabelFace(
+      liftDoorLeft,
+      '36',
+      .48,
+      .43,
+      'left',
+      'right'
+    );
+    liftDoorNumber36.visible = false;
+    addDoorLabelFace(liftDoorRight, 'TURBOLIFT', 1.05, -.155, 'right', 'left');
+    const liftDoorSeam = new THREE.Mesh(
+      new THREE.BoxGeometry(.024, liftDoorHeight + .01, .2),
+      liftDoorSeamMaterial
+    );
+    liftDoorSeam.position.x = liftDoorWidth / 2;
+    liftDoorLeft.add(liftDoorSeam);
+    liftCinematic.add(
+      liftDoorLeft,
+      liftDoorRight,
+      makeRoundedDoorFrame(),
+      makeDoorBulkhead()
+    );
+
+    const liftStarPortal = new THREE.Group();
+    liftStarPortal.visible = false;
+    liftCinematic.add(liftStarPortal);
+
+    const liftBackdrop = new THREE.Group();
+    liftBackdrop.visible = false;
+    scene.add(liftBackdrop);
+    const backdropRadius = 8.1;
+    const backdropCenterZ = -3.05;
+    const backdropSpans = [.14, .26, .26, .26, .26, .26, .26, .14];
+    let backdropAngle = Math.PI - backdropSpans.reduce((sum, span) => sum + span, 0) / 2;
+    backdropSpans.forEach((span, index) => {
+      const angle = backdropAngle + span / 2;
+      const widthFactor = index === 0 || index === backdropSpans.length - 1 ? .88 : .94;
+      const addBackdropPart = (height, y, material, radius, depth = .3) => {
+        const width = radius * span * widthFactor;
+        const part = makeLiftBox(
+          new THREE.Vector3(width, height, depth),
+          new THREE.Vector3(
+            Math.sin(angle) * radius,
+            y,
+            backdropCenterZ + Math.cos(angle) * radius
+          ),
+          material
+        );
+        part.rotation.y = angle;
+        liftBackdrop.add(part);
+      };
+      for (let vent = 0; vent < 4; vent++) {
+        addBackdropPart(.15, -4.55 + vent * .23, liftVentMaterial, backdropRadius - .12 + vent * .05, .34);
+      }
+      addBackdropPart(2.3, -3.05, liftBrownMaterial, backdropRadius);
+      addBackdropPart(.15, -1.82, liftTrimMaterial, backdropRadius - .02, .34);
+      addBackdropPart(1.32, -1.09, liftBrownMaterial, backdropRadius - .12);
+      addBackdropPart(.17, -.36, liftLightMaterial, backdropRadius - .2, .35);
+      addBackdropPart(.78, .1, liftOffWhiteMaterial, backdropRadius - .34);
+      addBackdropPart(.17, .56, liftLightMaterial, backdropRadius - .48, .35);
+      addBackdropPart(.85, 1.06, liftOffWhiteMaterial, backdropRadius - .67);
+      addBackdropPart(.2, 1.59, liftTanMaterial, backdropRadius - .88, .36);
+      addBackdropPart(2.7, 3.03, liftOffWhiteMaterial, backdropRadius - 1.12);
+      backdropAngle += span;
+    });
+
+    const backdropDoorLeft = makeLiftBox(
+      new THREE.Vector3(1.55, 6.9, .4),
+      new THREE.Vector3(-3.82, -2.1, -7.25),
+      liftDoorMaterial
+    );
+    const backdropDoorRight = makeLiftBox(
+      new THREE.Vector3(1.55, 6.9, .4),
+      new THREE.Vector3(-2.24, -2.1, -7.25),
+      liftDoorMaterial
+    );
+    const backdropLabelLeft = makeLiftLabel('11', .5);
+    backdropLabelLeft.position.set(.51, 2.05, .22);
+    backdropDoorLeft.add(backdropLabelLeft);
+    const backdropLabelRight = makeLiftLabel('TURBOLIFT', 1.48);
+    backdropLabelRight.position.set(-.1, 2.05, .22);
+    backdropDoorRight.add(backdropLabelRight);
+    const backdropDoorFrame = makeRoundedDoorFrame();
+    backdropDoorFrame.scale.set(.95, 1.61, 1);
+    backdropDoorFrame.position.set(-3.03, -5.58, -6.95);
+    liftBackdrop.add(backdropDoorLeft, backdropDoorRight, backdropDoorFrame);
+
+    function setStarOpacity(opacity) {
+      state.stars.children.forEach(stars => {
+        stars.material.opacity = opacity;
+      });
+      state.stars.visible = opacity > .001;
+    }
+
+    function setLiftDoors(openProgress) {
+      const eased = THREE.MathUtils.smoothstep(openProgress, 0, 1);
+      liftDoorLeft.position.x = THREE.MathUtils.lerp(
+        -liftDoorClosedX,
+        -liftDoorOpenX,
+        eased
+      );
+      liftDoorRight.position.x = THREE.MathUtils.lerp(
+        liftDoorClosedX,
+        liftDoorOpenX,
+        eased
+      );
+    }
+
+    function useSpaceEnvironment() {
+      state.liftTransition = null;
+      boardInLift = false;
+      liftCinematic.visible = false;
+      liftBackdrop.visible = false;
+      liftStarPortal.visible = false;
+      setLiftDoors(0);
+      setStarOpacity(1);
+      scene.background.copy(spaceBackground);
+      scene.fog.color.copy(spaceFogColor);
+      scene.fog.density = spaceFogDensity;
+      board.visible = true;
+      field.material.opacity = .13;
+      applyBoardAngle();
+      configureCamera();
+    }
+
+    function useLiftEnvironment() {
+      boardInLift = true;
+      liftCinematic.visible = true;
+      liftBackdrop.visible = false;
+      liftStarPortal.visible = false;
+      setLiftDoors(0);
+      setStarOpacity(0);
+      scene.background.copy(liftBackground);
+      scene.fog.color.copy(liftFogColor);
+      scene.fog.density = liftFogDensity;
+      board.visible = true;
+      field.material.opacity = 0;
+      applyBoardAngle();
+      configureCamera();
+    }
+
+    function startLiftTransition(type, { resumeLevel = false } = {}) {
+      state.transitioning = true;
+      state.charging = false;
+      clearTimeout(messageTimer);
+      ui.message.textContent = type === 'entry'
+        ? 'Level 47 · entering turbolift'
+        : 'Level 47 complete · exiting turbolift';
+      ui.message.dataset.tone = 'hit';
+      state.liftTransition = {
+        type,
+        start: clock.elapsedTime,
+        resumeLevel,
+        duration: prefersReducedMotion.matches ? 1.05 : 5.4
+      };
+      liftDoorNumber11.visible = type !== 'exit';
+      liftDoorNumber36.visible = type === 'exit';
+      liftBackdrop.visible = false;
+      liftCinematic.visible = !prefersReducedMotion.matches;
+      liftStarPortal.visible = false;
+      board.visible = false;
+      setLiftDoors(0);
+      if (type === 'exit') {
+        setStarOpacity(1);
+        scene.background.copy(spaceBackground);
+        scene.fog.color.copy(spaceFogColor);
+        scene.fog.density = spaceFogDensity;
+      }
+      if (!prefersReducedMotion.matches) {
+        const position = type === 'entry'
+          ? new THREE.Vector3(0, 2.45, 8.2)
+          : new THREE.Vector3(.45, 3, -1.45);
+        camera.position.copy(position);
+        camera.rotation.set(0, type === 'entry' ? 0 : Math.PI, 0);
+        camera.zoom = 1;
+        camera.fov = 50;
+        camera.updateProjectionMatrix();
+      }
+      tone(523, .38, 'sine', .026, 260);
+      setTimeout(() => tone(784, .5, 'sine', .018, -120), 190);
+    }
+
+    function finishLiftTransition(type) {
+      const resumeLevel = state.liftTransition?.resumeLevel;
+      if (type === 'entry') {
+        useLiftEnvironment();
+      } else {
+        useSpaceEnvironment();
+      }
+      state.liftTransition = null;
+      if (resumeLevel) {
+        state.transitioning = false;
+        const capacity = Math.min(state.levelQuota, 3);
+        const liveCones = state.targets.filter(target => !target.userData.hit).length;
+        const liveDiscs = state.discs.length + state.flights.length;
+        for (let i = liveCones; i < capacity; i++) {
+          spawnCone(randomDelay(180, 520) + i * 180, state.generation);
+        }
+        for (let i = liveDiscs; i < capacity; i++) {
+          spawnDisc(randomDelay(260, 680) + i * 220, state.generation);
+        }
+        updateSceneMetrics();
+        message(`Level ${state.level} · star field restored`, 'hit');
+      } else {
+        beginLevel();
+      }
+    }
+
+    function updateLiftTransition(time) {
+      const transition = state.liftTransition;
+      if (!transition) return;
+      const progress = THREE.MathUtils.clamp(
+        (time - transition.start) / transition.duration,
+        0,
+        1
+      );
+
+      if (prefersReducedMotion.matches) {
+        if (progress >= .48) {
+          if (transition.type === 'entry') {
+            setStarOpacity(0);
+            scene.background.copy(liftBackground);
+            scene.fog.color.copy(liftFogColor);
+            scene.fog.density = liftFogDensity;
+          } else {
+            setStarOpacity(1);
+            scene.background.copy(spaceBackground);
+            scene.fog.color.copy(spaceFogColor);
+            scene.fog.density = spaceFogDensity;
+          }
+        }
+        if (progress >= 1) finishLiftTransition(transition.type);
+        return;
+      }
+
+      if (transition.type === 'entry') {
+        liftStarPortal.visible = false;
+        const doorOpen = progress < .22
+          ? THREE.MathUtils.smoothstep(progress, .03, .2)
+          : progress < .8
+            ? 1
+            : 1 - THREE.MathUtils.smoothstep(progress, .8, .98);
+        setLiftDoors(doorOpen);
+        const walk = THREE.MathUtils.smoothstep(progress, .2, .58);
+        const turn = THREE.MathUtils.smoothstep(progress, .58, .79);
+        camera.position.set(
+          THREE.MathUtils.lerp(0, .45, turn),
+          THREE.MathUtils.lerp(2.45, 3, walk) + Math.sin(walk * Math.PI) * .028,
+          THREE.MathUtils.lerp(8.2, -1.45, walk)
+        );
+        camera.rotation.set(0, turn * Math.PI, 0);
+        setStarOpacity(1 - THREE.MathUtils.smoothstep(progress, .82, .98));
+      } else {
+        const doorOpen = progress < .22
+          ? THREE.MathUtils.smoothstep(progress, .03, .2)
+          : progress < .62
+            ? 1
+            : 1 - THREE.MathUtils.smoothstep(progress, .62, .84);
+        setLiftDoors(doorOpen);
+        const walk = THREE.MathUtils.smoothstep(progress, .16, .52);
+        const turn = THREE.MathUtils.smoothstep(progress, .37, .58);
+        camera.position.set(
+          THREE.MathUtils.lerp(.45, 0, walk),
+          THREE.MathUtils.lerp(3, 2.45, walk) + Math.sin(walk * Math.PI) * .028,
+          THREE.MathUtils.lerp(-1.45, 8.2, walk)
+        );
+        camera.rotation.set(0, Math.PI * (1 - turn), 0);
+      }
+      if (progress >= 1) finishLiftTransition(transition.type);
     }
 
     const ambient = new THREE.HemisphereLight(0x7770ff, 0x120405, .42);
@@ -1446,21 +2119,6 @@
     field.receiveShadow = true;
     board.add(field);
 
-    // Depth-only backing keeps the rear star field behind the board silhouette.
-    const starOccluder = new THREE.Mesh(
-      new THREE.PlaneGeometry(10.95, 9.15),
-      new THREE.MeshBasicMaterial({
-        colorWrite: false,
-        depthWrite: true,
-        depthTest: true,
-        side: THREE.DoubleSide
-      })
-    );
-    starOccluder.rotation.x = -Math.PI / 2;
-    starOccluder.position.y = -.115;
-    starOccluder.renderOrder = -10;
-    board.add(starOccluder);
-
     const holes = [];
     const holeGeo = new THREE.CircleGeometry(.54, 48);
     for (let row = 0; row < 6; row++) {
@@ -1476,7 +2134,7 @@
           roughness: .48,
           metalness: .08,
           transparent: true,
-          opacity: .9,
+          opacity: .72,
           side: THREE.DoubleSide,
           depthWrite: false
         }));
@@ -2389,7 +3047,7 @@
     }
 
     function recordHighScore() {
-      if (state.scoreRecorded || state.score <= 0) return;
+      if (!state.scoreEligible || state.scoreRecorded || state.score <= 0) return;
       state.scoreRecorded = true;
       const scores = loadHighScores(state.mode);
       scores.push({ score: state.score, level: state.level });
@@ -2901,6 +3559,7 @@
     }
 
     function resetGame() {
+      useSpaceEnvironment();
       state.level = 1;
       state.score = 0;
       state.tries = 3;
@@ -2908,6 +3567,7 @@
       state.timerExpired = false;
       state.displayedTime = 90;
       state.scoreRecorded = false;
+      state.scoreEligible = true;
       state.charge = 0;
       state.charging = false;
       updateHUD();
@@ -2929,6 +3589,34 @@
       resetGame();
     }
 
+    function startLevel47Shortcut() {
+      useSpaceEnvironment();
+      clearObjects();
+      state.mode = 'classic';
+      state.started = true;
+      state.playing = true;
+      state.level = 47;
+      state.score = 0;
+      state.tries = 3;
+      state.timeRemaining = 90;
+      state.timerExpired = false;
+      state.displayedTime = 90;
+      state.scoreRecorded = false;
+      state.scoreEligible = false;
+      state.charge = 0;
+      state.charging = false;
+      state.levelHits = 0;
+      state.levelQuota = 47;
+      state.levelConesIssued = 0;
+      setSettingsOpen(false);
+      document.body.classList.remove('home-active');
+      ui.startOverlay.hidden = true;
+      ui.endOverlay.hidden = true;
+      updateHUD();
+      updateSceneMetrics();
+      startLiftTransition('entry');
+    }
+
     function getAimDestination() {
       if (!state.activeDisc) return null;
       raycaster.setFromCamera(pointer, camera);
@@ -2943,7 +3631,12 @@
     }
 
     function updateAim() {
-      if (!state.playing || state.settingsOpen || !state.activeDisc) {
+      if (
+        !state.playing ||
+        state.transitioning ||
+        state.settingsOpen ||
+        !state.activeDisc
+      ) {
         reticle.visible = false;
         aimLine.visible = false;
         return;
@@ -3207,13 +3900,28 @@
 
     function completeLevel() {
       state.transitioning = true;
+      const completedLevel = state.level;
       state.score += 25 * state.level;
       updateHUD();
       message(`Level ${state.level} assimilated`, 'hit');
       tone(320, .75, 'sine', .035, 500);
       setTimeout(() => {
         state.level++;
-        beginLevel();
+        if (completedLevel === 46) {
+          state.levelHits = 0;
+          state.levelQuota = 47;
+          updateHUD();
+          message('Level 47 · entering turbolift', 'hit');
+          startLiftTransition('entry');
+        } else if (completedLevel === 47) {
+          state.levelHits = 0;
+          state.levelQuota = 48;
+          updateHUD();
+          message('Level 47 complete · exiting turbolift', 'hit');
+          startLiftTransition('exit');
+        } else {
+          beginLevel();
+        }
       }, 550);
     }
 
@@ -3241,6 +3949,7 @@
 
     function finishExit() {
       clearObjects();
+      useSpaceEnvironment();
       state.started = false;
       state.transitioning = false;
       ui.endOverlay.hidden = true;
@@ -3289,7 +3998,60 @@
     });
     renderer.domElement.addEventListener('contextmenu', event => event.preventDefault());
 
+    let homeCode = '';
+    let homeCodeTimer = 0;
+    let liftCode = '';
+    let liftCodeTimer = 0;
+
+    function captureHomeCode(event) {
+      if (state.started || ui.startOverlay.hidden) return false;
+      if (!/^\d$/.test(event.key)) {
+        homeCode = '';
+        clearTimeout(homeCodeTimer);
+        return false;
+      }
+      clearTimeout(homeCodeTimer);
+      homeCode = `${homeCode}${event.key}`.slice(-2);
+      homeCodeTimer = setTimeout(() => {
+        homeCode = '';
+      }, 1800);
+      if (homeCode === '47') {
+        clearTimeout(homeCodeTimer);
+        homeCode = '';
+        startLevel47Shortcut();
+      }
+      return true;
+    }
+
+    function captureLiftCode(event) {
+      if (!state.playing || !boardInLift || state.liftTransition) return false;
+      if (!/^\d$/.test(event.key)) {
+        liftCode = '';
+        clearTimeout(liftCodeTimer);
+        return false;
+      }
+      clearTimeout(liftCodeTimer);
+      liftCode = `${liftCode}${event.key}`.slice(-2);
+      liftCodeTimer = setTimeout(() => {
+        liftCode = '';
+      }, 1800);
+      if (liftCode === '47') {
+        clearTimeout(liftCodeTimer);
+        liftCode = '';
+        startLiftTransition('exit', { resumeLevel: true });
+      }
+      return true;
+    }
+
     addEventListener('keydown', event => {
+      if (captureHomeCode(event)) {
+        event.preventDefault();
+        return;
+      }
+      if (captureLiftCode(event)) {
+        event.preventDefault();
+        return;
+      }
       if (event.code === 'Space') {
         event.preventDefault();
         if (!event.repeat) beginCharge();
@@ -3359,9 +4121,16 @@
     });
 
     addEventListener('resize', () => {
-      configureCamera();
+      if (!state.liftTransition) configureCamera();
       renderer.setSize(innerWidth, innerHeight);
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      const liftPixelRatio = Math.min(devicePixelRatio, 2);
+      liftViewCamera.aspect = innerWidth / innerHeight;
+      liftViewCamera.updateProjectionMatrix();
+      liftViewTarget.setSize(
+        Math.round(innerWidth * liftPixelRatio),
+        Math.round(innerHeight * liftPixelRatio)
+      );
     });
 
     function animate() {
@@ -3369,7 +4138,15 @@
       const dt = Math.min(clock.getDelta(), .04);
       const time = clock.elapsedTime;
 
-      if (state.playing && !state.settingsOpen && state.mode === 'timed' && !state.timerExpired) {
+      updateLiftTransition(time);
+
+      if (
+        state.playing &&
+        !state.transitioning &&
+        !state.settingsOpen &&
+        state.mode === 'timed' &&
+        !state.timerExpired
+      ) {
         state.timeRemaining = Math.max(0, state.timeRemaining - dt);
         const displayedTime = Math.ceil(state.timeRemaining);
         if (displayedTime !== state.displayedTime) {
@@ -3401,7 +4178,7 @@
           .copy(holeEmissionDark)
           .lerp(holeEmissionLit, illumination);
         hole.well.material.emissiveIntensity = .42 + illumination * .8;
-        hole.well.material.opacity = .9 + illumination * .05;
+        hole.well.material.opacity = .72 + illumination * .1;
       });
 
       state.targets.forEach(cone => {
@@ -3605,13 +4382,35 @@
         if (p >= 1) resolveFlight(f);
       });
 
-      const driftX = pointer.x * .28;
-      const driftY = pointer.y * .12;
-      camera.position.x += (driftX - camera.position.x) * .012;
-      camera.rotation.z += (-pointer.x * .006 - camera.rotation.z) * .02;
+      if (!state.liftTransition && !boardInLift) {
+        const driftX = pointer.x * .28;
+        camera.position.x += (driftX - camera.position.x) * .012;
+        camera.rotation.z += (-pointer.x * .006 - camera.rotation.z) * .02;
+      }
       key.position.x = -5 + Math.sin(time * .18) * 2;
 
-      renderer.render(scene, camera);
+      if (boardInLift && !state.liftTransition) {
+        const previousBackground = scene.background;
+        const boardWasVisible = board.visible;
+
+        board.visible = false;
+        liftCinematic.visible = true;
+        scene.background = liftBackground;
+        renderer.setRenderTarget(liftViewTarget);
+        renderer.render(scene, liftViewCamera);
+
+        renderer.setRenderTarget(null);
+        board.visible = boardWasVisible;
+        liftCinematic.visible = false;
+        scene.background = liftViewTarget.texture;
+        renderer.render(scene, camera);
+
+        liftCinematic.visible = true;
+        scene.background = previousBackground;
+      } else {
+        renderer.setRenderTarget(null);
+        renderer.render(scene, camera);
+      }
     }
 
     updateHUD();
