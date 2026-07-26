@@ -1044,7 +1044,7 @@
     </section>
 
     <section class="status">
-      <div class="status__message" id="statusMessage">Hold to focus · release to launch</div>
+      <div class="status__message" id="statusMessage">Hold to focus · just let go</div>
       <div class="level-progress" aria-label="Level completion">
         <div class="level-progress__fill" id="levelProgress"></div>
       </div>
@@ -1096,7 +1096,7 @@
     <div class="home">
       <div class="home__hero">
         <h1 class="home__title">Ktarian Game</h1>
-        <p class="home__copy"><strong>Focus your intent.</strong> Hold the pointer to build impulse, aim across the field, then release. Guide every disc into a violet cone.</p>
+        <p class="home__copy"><strong>Concentrate.</strong> Make the disc go into the cone. Hold the pointer to build focus, aim across the playing field, then just let go. Relax... You'll do it.</p>
         <div class="mode-actions">
           <button class="primary" id="startButton">Play game</button>
           <button class="primary primary--secondary" id="timedButton">Timed mode</button>
@@ -2814,6 +2814,10 @@
       return remaining;
     }
 
+    const discBaseScale = .65;
+    const discRiseDuration = 1.05;
+    const discEmergenceDuration = 1.22;
+
     function makeDisc() {
       const group = new THREE.Group();
       const profile = [
@@ -3066,6 +3070,18 @@
       stage.dataset.targets = String(state.targets.filter(target => !target.userData.hit).length);
     }
 
+    const successMessages = [
+      'you did it',
+      'just let the game happen',
+      'it almost plays itself'
+    ];
+    let successMessageIndex = 0;
+    function nextSuccessMessage() {
+      const text = successMessages[successMessageIndex];
+      successMessageIndex = (successMessageIndex + 1) % successMessages.length;
+      return text;
+    }
+
     let messageTimer = 0;
     function message(text, toneName = '') {
       ui.message.textContent = text;
@@ -3073,7 +3089,7 @@
       clearTimeout(messageTimer);
       if (toneName) {
         messageTimer = setTimeout(() => {
-          ui.message.textContent = state.playing ? 'Hold to focus · release to launch' : text;
+          ui.message.textContent = state.playing ? 'Hold to focus · just let go' : text;
           ui.message.dataset.tone = '';
         }, 1400);
       }
@@ -3511,7 +3527,7 @@
         const source = chosen.hole.group.position.clone();
         disc.position.copy(source);
         disc.position.y = -.18;
-        disc.scale.setScalar(.05);
+        disc.scale.setScalar(discBaseScale);
         disc.userData.birth = clock.elapsedTime;
         disc.userData.source = source;
         disc.userData.sourceHoleIndex = chosen.index;
@@ -3523,7 +3539,7 @@
         ).multiplyScalar(.3);
         state.discSerial++;
         disc.userData.floatY = -.18;
-        disc.userData.baseScale = .75;
+        disc.userData.baseScale = discBaseScale;
         state.discs.push(disc);
         state.activeDisc ||= disc;
         board.add(disc);
@@ -3549,7 +3565,7 @@
         spawnCone(coneDelay, generation);
       }
       updateSceneMetrics();
-      message(`Level ${state.level} · ${state.levelQuota} cone${state.levelQuota > 1 ? 's' : ''} detected`);
+      message(`Level ${state.level} · ${state.levelQuota} cone${state.levelQuota > 1 ? 's' : ''}`);
       for (let i = 0; i < count; i++) {
         const discDelay = i === 0
           ? randomDelay(380, 720)
@@ -3626,7 +3642,10 @@
       const dir = local.sub(origin).setY(0);
       if (dir.lengthSq() < .001) dir.set(0, 0, -1);
       dir.normalize();
-      const distance = .25 + state.charge * 12.2;
+      const normalizedCharge = state.charging
+        ? THREE.MathUtils.clamp((state.charge - .04) / .96, 0, 1)
+        : 0;
+      const distance = normalizedCharge * 12.45;
       return origin.addScaledVector(dir, distance).setY(.12);
     }
 
@@ -3668,15 +3687,15 @@
       if (event?.pointerId !== undefined) {
         renderer.domElement.setPointerCapture?.(event.pointerId);
       }
-      message('Focus building');
+      message('Focus building · relax');
       tone(88, .18, 'sine', .018, 25);
     }
 
     function launch() {
       if (!state.charging || !state.activeDisc) return;
+      const destination = getAimDestination();
       state.charging = false;
       state.pointerDownId = null;
-      const destination = getAimDestination();
       if (!destination) return;
 
       let target = null;
@@ -3781,7 +3800,7 @@
       updateSceneMetrics();
       reticle.visible = false;
       aimLine.visible = false;
-      message(target ? 'Trajectory locked' : 'Trajectory committed');
+      message(target ? "Don't force it" : 'Disc committed');
       tone(230, .42, 'sawtooth', .027, 260);
     }
 
@@ -3853,10 +3872,11 @@
           state.displayedTime = Math.ceil(state.timeRemaining);
         }
         updateHUD();
+        const successMessage = nextSuccessMessage();
         message(
           state.mode === 'timed'
-            ? 'Pattern accepted · 3 seconds added'
-            : 'Pattern accepted',
+            ? `${successMessage} · 3 seconds added`
+            : successMessage,
           'hit'
         );
         tone(440, .16, 'sine', .04, 330);
@@ -3879,7 +3899,7 @@
           state.timeRemaining = Math.max(0, state.timeRemaining - 5);
           state.displayedTime = Math.ceil(state.timeRemaining);
           updateHUD();
-          message('Pattern rejected · 5 second penalty', 'miss');
+          message("Just let go. Relax... You'll do it. · 5 second penalty", 'miss');
           if (state.timeRemaining <= 0) {
             setTimeout(expireTimedGame, 450);
           } else {
@@ -3888,7 +3908,7 @@
         } else {
           state.tries--;
           updateHUD();
-          message('Pattern rejected', 'miss');
+          message("Just let go. Relax... You'll do it.", 'miss');
           if (state.tries <= 0) {
             setTimeout(gameOver, 650);
           } else {
@@ -3903,7 +3923,7 @@
       const completedLevel = state.level;
       state.score += 25 * state.level;
       updateHUD();
-      message(`Level ${state.level} assimilated`, 'hit');
+      message(`Level ${state.level} cleared`, 'hit');
       tone(320, .75, 'sine', .035, 500);
       setTimeout(() => {
         state.level++;
@@ -4218,7 +4238,9 @@
       });
 
       // Slow free motion with local collision repulsion in the player-side two-row band.
-      const movingDiscs = state.discs.filter(disc => time - disc.userData.birth > 1.05);
+      const movingDiscs = state.discs.filter(
+        disc => time - disc.userData.birth > discEmergenceDuration
+      );
       movingDiscs.forEach(disc => {
         const velocity = disc.userData.velocity;
         const turn = Math.sin(time * .31 + disc.userData.wanderSeed) * .055 * dt;
@@ -4274,22 +4296,43 @@
 
       state.discs.forEach((disc, index) => {
         const age = time - disc.userData.birth;
-        const emerge = Math.min(1, age / .82);
+        const emerge = Math.min(1, age / discRiseDuration);
         const e = 1 - Math.pow(1 - emerge, 3);
+        const wanderAge = Math.max(0, age - discEmergenceDuration);
+        const wanderBlend = THREE.MathUtils.smoothstep(
+          age,
+          discEmergenceDuration,
+          discEmergenceDuration + .42
+        );
         const seed = disc.userData.wanderSeed;
         const isActive = disc === state.activeDisc;
         const floatTarget = -.18 + e * ((isActive ? 1.7 : .66) + .18);
         disc.userData.floatY = THREE.MathUtils.damp(
           disc.userData.floatY,
           floatTarget,
-          isActive ? 5.5 : 3.8,
+          isActive ? 1.6 : 3.8,
           dt
         );
-        disc.position.y = disc.userData.floatY + e * Math.sin(time * 1.35 + seed) * .045;
-        disc.scale.setScalar(Math.max(.05, e * disc.userData.baseScale));
-        disc.rotation.x = Math.sin(time * (isActive ? .41 : .27) + seed) * (isActive ? .3 : .14);
-        disc.rotation.y = time * (isActive ? .38 : .19) + seed;
-        disc.rotation.z = Math.cos(time * (isActive ? .34 : .23) + seed * 1.3) * (isActive ? .26 : .12);
+        disc.position.y = (
+          disc.userData.floatY
+          + Math.sin(time * 1.35 + seed) * .045 * wanderBlend
+        );
+        disc.scale.setScalar(disc.userData.baseScale);
+        disc.rotation.x = (
+          Math.sin(wanderAge * (isActive ? .41 : .27) + seed)
+          * (isActive ? .3 : .14)
+          * wanderBlend
+        );
+        disc.rotation.y = (
+          wanderAge
+          * (isActive ? .38 : .19)
+          * wanderBlend
+        );
+        disc.rotation.z = (
+          Math.cos(wanderAge * (isActive ? .34 : .23) + seed * 1.3)
+          * (isActive ? .26 : .12)
+          * wanderBlend
+        );
       });
 
       if (state.charging) {
