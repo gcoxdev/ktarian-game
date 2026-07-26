@@ -1233,11 +1233,34 @@
       const aspect = innerWidth / innerHeight;
       const portraitPhone = innerWidth <= 720 && aspect <= 1;
       const portraitTablet = innerWidth > 720 && innerWidth <= 1024 && aspect <= 1;
-      const compactLandscape = innerHeight <= 540 && aspect > 1.25;
+      const landscapePhone = innerHeight <= 540 && aspect > 1.25;
+      const landscapeTablet =
+        !landscapePhone &&
+        innerWidth > 720 &&
+        innerWidth <= 1180 &&
+        aspect > 1;
+      const deviceClass = portraitPhone
+        ? 'phonePortrait'
+        : portraitTablet
+          ? 'tabletPortrait'
+          : landscapePhone
+            ? 'phoneLandscape'
+            : landscapeTablet
+              ? 'tabletLandscape'
+              : 'desktop';
+      const currentLayoutZoom = landscapePhone ? 1.42 : 1;
+      const defaultDeviceZoom = {
+        desktop: 1.25,
+        phonePortrait: 1.03,
+        phoneLandscape: 1.2,
+        tabletPortrait: 1.03,
+        tabletLandscape: 1.25
+      }[deviceClass];
       camera.aspect = aspect;
       camera.zoom = (
-        (compactLandscape ? 1.42 : 1)
+        currentLayoutZoom
         * zoomBaseline
+        * defaultDeviceZoom
         * settings.zoom
       );
       camera.fov = portraitPhone ? 52 : portraitTablet ? 44 : 40;
@@ -1437,13 +1460,6 @@
     starOccluder.position.y = -.115;
     starOccluder.renderOrder = -10;
     board.add(starOccluder);
-
-    const rim = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.BoxGeometry(11, .08, 9.2)),
-      new THREE.LineBasicMaterial({ color: 0x464176, transparent: true, opacity: .25 })
-    );
-    rim.position.y = -.08;
-    board.add(rim);
 
     const holes = [];
     const holeGeo = new THREE.CircleGeometry(.54, 48);
@@ -2437,13 +2453,28 @@
 
           return occupiedHoles.every(existing => {
             const sameColumn = h.col === existing.col;
-            const horizontalNeighbor =
-              h.row === existing.row &&
-              Math.abs(h.col - existing.col) === 1;
-            return !sameColumn && !horizontalNeighbor;
+            const immediatelyAdjacent =
+              Math.abs(h.row - existing.row) <= 1 &&
+              Math.abs(h.col - existing.col) <= 1;
+            return !sameColumn && !immediatelyAdjacent;
           });
         });
-      return options[Math.floor(Math.random() * options.length)];
+      if (!options.length || !occupiedHoles.length) {
+        return options[Math.floor(Math.random() * options.length)];
+      }
+      const ranked = options
+        .map(option => ({
+          ...option,
+          clearance: Math.min(...occupiedHoles.map(existing => (
+            option.h.group.position.distanceTo(existing.group.position)
+          )))
+        }))
+        .sort((a, b) => b.clearance - a.clearance);
+      const bestClearance = ranked[0].clearance;
+      const spreadPool = ranked
+        .filter(option => option.clearance >= bestClearance - .38)
+        .slice(0, 4);
+      return spreadPool[Math.floor(Math.random() * spreadPool.length)];
     }
 
     function availableDiscHole() {
@@ -2462,24 +2493,55 @@
       return min + Math.random() * (max - min);
     }
 
-    function nearestMissHole(aimedCone, fallbackPosition) {
-      const reference = aimedCone?.position || fallbackPosition;
+    function nearestMissHole(
+      aimedCone,
+      origin,
+      destination,
+      sourceHoleIndex
+    ) {
       const excludedIndex = aimedCone?.userData.holeIndex;
+      const coneHole = holes[excludedIndex];
       const occupiedTargets = new Set(
         state.targets
           .filter(cone => cone !== aimedCone && !cone.userData.hit)
           .map(cone => cone.userData.holeIndex)
       );
+      const path = new THREE.Vector2(
+        destination.x - origin.x,
+        destination.z - origin.z
+      );
+      const direction = path.lengthSq() > .001
+        ? path.normalize()
+        : new THREE.Vector2(0, -1);
       let best = null;
-      let bestDistance = Infinity;
+      let bestScore = Infinity;
       holes.forEach((hole, index) => {
-        if (index === excludedIndex || occupiedTargets.has(index)) return;
-        const distance = Math.hypot(
-          hole.group.position.x - reference.x,
-          hole.group.position.z - reference.z
+        if (
+          index === excludedIndex ||
+          index === sourceHoleIndex ||
+          occupiedTargets.has(index)
+        ) return;
+        if (
+          coneHole &&
+          (
+            Math.abs(hole.row - coneHole.row) > 1 ||
+            Math.abs(hole.col - coneHole.col) > 1
+          )
+        ) return;
+        const relative = new THREE.Vector2(
+          hole.group.position.x - origin.x,
+          hole.group.position.z - origin.z
         );
-        if (distance < bestDistance) {
-          bestDistance = distance;
+        const perpendicular = Math.abs(
+          relative.x * direction.y - relative.y * direction.x
+        );
+        const releaseDistance = Math.hypot(
+          hole.group.position.x - destination.x,
+          hole.group.position.z - destination.z
+        );
+        const score = releaseDistance + perpendicular * .45;
+        if (score < bestScore) {
+          bestScore = score;
           best = { hole, index };
         }
       });
@@ -2487,7 +2549,15 @@
     }
 
     function pathMissHole(origin, destination, nearMissCone, sourceHoleIndex) {
-      if (nearMissCone) return nearestMissHole(nearMissCone, destination);
+      if (nearMissCone) {
+        const adjacentHole = nearestMissHole(
+          nearMissCone,
+          origin,
+          destination,
+          sourceHoleIndex
+        );
+        if (adjacentHole) return adjacentHole;
+      }
 
       const start = new THREE.Vector2(origin.x, origin.z);
       const end = new THREE.Vector2(destination.x, destination.z);
@@ -2499,8 +2569,9 @@
           .filter(cone => !cone.userData.hit)
           .map(cone => cone.userData.holeIndex)
       );
-      let best = null;
-      let bestScore = Infinity;
+      const candidates = [];
+      let fallback = null;
+      let fallbackScore = Infinity;
       holes.forEach((hole, index) => {
         if (index === sourceHoleIndex || occupiedTargets.has(index)) return;
         const relative = new THREE.Vector2(
@@ -2511,15 +2582,32 @@
         const perpendicular = Math.abs(
           relative.x * direction.y - relative.y * direction.x
         );
-        const behindPenalty = projection < 0 ? Math.abs(projection) * 3 : 0;
-        const endpointBias = Math.abs(projection - pathLength) * .12;
-        const score = perpendicular * 1.7 + endpointBias + behindPenalty;
-        if (score < bestScore) {
-          bestScore = score;
-          best = { hole, index };
+        const broadScore =
+          perpendicular * 2
+          + Math.abs(projection - pathLength) * .18
+          + (projection < 0 ? Math.abs(projection) * 3 : 0);
+        if (broadScore < fallbackScore) {
+          fallbackScore = broadScore;
+          fallback = { hole, index };
         }
+        if (projection <= .2 || projection > pathLength + 1.1) return;
+        candidates.push({
+          hole,
+          index,
+          perpendicular,
+          score:
+            perpendicular * 2
+            + Math.abs(projection - pathLength) * .18
+        });
       });
-      return best;
+      const tightlyAligned = candidates.filter(
+        candidate => candidate.perpendicular <= .7
+      );
+      const pathOptions = tightlyAligned.length
+        ? tightlyAligned
+        : candidates;
+      pathOptions.sort((a, b) => a.score - b.score);
+      return pathOptions[0] || fallback;
     }
 
     function flightCurveEnvelope(progress, skew) {
@@ -2680,7 +2768,14 @@
       }
       if (correction.lengthSq() < .0001) return;
       correction.clampLength(0, .72);
-      const endpointFade = Math.min(1, Math.sin(progress * Math.PI) * 2.8);
+      const endpointFade = Math.min(
+        1,
+        Math.sin(progress * Math.PI) * 2.8
+      ) * (
+        flight.target
+          ? 1
+          : 1 - THREE.MathUtils.smoothstep(progress, .62, .86)
+      );
       flight.disc.position.x += correction.x * endpointFade;
       flight.disc.position.z += correction.y * endpointFade;
     }
@@ -2998,12 +3093,39 @@
     }
 
     function placeOnFlightCurve(flight, end, progress) {
-      flight.disc.position.lerpVectors(flight.start, end, progress);
-      const curveEnvelope = flightCurveEnvelope(progress, flight.curveSkew);
-      flight.disc.position.y += curveEnvelope * flight.curveLift;
-      flight.disc.position.addScaledVector(
+      const settle = THREE.MathUtils.smoothstep(progress, .62, .9);
+      const planarProgress = THREE.MathUtils.lerp(progress, 1, settle);
+      const planarPosition = horizontalFlightPoint(
+        flight.start,
+        end,
         flight.curveNormal,
-        curveEnvelope * flight.curveSide
+        flight.curveSide,
+        flight.curveSkew,
+        planarProgress
+      );
+      flight.disc.position.x = planarPosition.x;
+      flight.disc.position.z = planarPosition.y;
+
+      const approach = THREE.MathUtils.smoothstep(progress, 0, .86);
+      const liftFade = 1 - THREE.MathUtils.smoothstep(
+        progress,
+        .68,
+        .92
+      );
+      const aboveHoleY = THREE.MathUtils.lerp(
+        flight.start.y,
+        .14,
+        approach
+      ) + (
+        flightCurveEnvelope(progress, flight.curveSkew)
+        * flight.curveLift
+        * liftFade
+      );
+      const descent = THREE.MathUtils.smoothstep(progress, .84, 1);
+      flight.disc.position.y = THREE.MathUtils.lerp(
+        aboveHoleY,
+        end.y,
+        descent
       );
     }
 
@@ -3473,10 +3595,11 @@
           applyLiveConeAvoidance(f, p);
           f.disc.rotateOnAxis(f.spinAxis, f.spinSpeed * dt);
         }
-        if (!f.target && p > .76) {
-          const sink = (p - .76) / .24;
+        if (!f.target && p > .84) {
+          const sink = THREE.MathUtils.smoothstep(p, .84, 1);
           f.disc.scale.setScalar(
-            f.disc.userData.baseScale * Math.max(.025, 1 - sink)
+            f.disc.userData.baseScale
+              * THREE.MathUtils.lerp(1, .035, sink)
           );
         }
         if (p >= 1) resolveFlight(f);
