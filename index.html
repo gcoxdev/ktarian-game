@@ -1504,28 +1504,48 @@
       const bulgeWidth = .12 + Math.random() * .07;
       const bulgeStrength = Math.random() < .72 ? .025 + Math.random() * .085 : 0;
       const apertureYaw = THREE.MathUtils.degToRad(
-        -28 + Math.random() * 56
+        -42 + Math.random() * 84
       );
       const apertureElevation = THREE.MathUtils.degToRad(
-        8 + Math.random() * 40
+        2 + Math.random() * 56
       );
       const cameraFacingNormal = new THREE.Vector3(
         Math.sin(apertureYaw) * Math.cos(apertureElevation),
         Math.sin(apertureElevation),
         Math.cos(apertureYaw) * Math.cos(apertureElevation)
       ).normalize();
-      const cameraFacingAmount = .56 + Math.random() * .3;
+      const cameraFacingAmount = .74 + Math.random() * .22;
       const mouthRoll = THREE.MathUtils.degToRad(
-        -15 + Math.random() * 30
+        -24 + Math.random() * 48
       );
       const aperturePitchMotion = THREE.MathUtils.degToRad(
-        3 + Math.random() * 4
+        5 + Math.random() * 5
       );
       const apertureYawMotion = THREE.MathUtils.degToRad(
-        5 + Math.random() * 4
+        8 + Math.random() * 5
       );
       const apertureRollMotion = THREE.MathUtils.degToRad(
-        3 + Math.random() * 4
+        5 + Math.random() * 5
+      );
+      const apertureMotionRate = new THREE.Vector3(
+        .42 + Math.random() * .36,
+        .45 + Math.random() * .4,
+        .52 + Math.random() * .48
+      );
+      const stemMotionRate = new THREE.Vector3(
+        .62 + Math.random() * .68,
+        .68 + Math.random() * .7,
+        .58 + Math.random() * .76
+      );
+      const stemMotionAmplitude = new THREE.Vector3(
+        .06 + Math.random() * .09,
+        .012 + Math.random() * .038,
+        .035 + Math.random() * .085
+      );
+      const stemMotionPhase = new THREE.Vector3(
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2
       );
       const curvePoint = v => {
         const bend = Math.max(0, (v - bendStart) / bendSpan);
@@ -1670,6 +1690,9 @@
           closing: { value: 0 },
           gridPlane: { value: gridPlaneWorld },
           lightDirection: { value: coneLightDirection },
+          motionRate: { value: stemMotionRate },
+          motionAmplitude: { value: stemMotionAmplitude },
+          motionPhase: { value: stemMotionPhase },
           colorA: { value: new THREE.Color(0x9b85de) },
           colorB: { value: new THREE.Color(0xeadfff) }
         },
@@ -1679,6 +1702,9 @@
           uniform float time;
           uniform float straighten;
           uniform float closing;
+          uniform vec3 motionRate;
+          uniform vec3 motionAmplitude;
+          uniform vec3 motionPhase;
           varying vec2 vUv;
           varying vec3 vNormalView;
           varying vec3 vLocal;
@@ -1687,9 +1713,15 @@
             vUv = uv;
             vec3 p = position;
             float anchored = sin(uv.y * 3.14159265);
-            float sway = sin(time * 1.5 + uv.y * 5.0) * .1 * anchored;
-            p.x += sway + sin(time * 2.1 + uv.y * 8.0) * .028 * anchored;
-            p.z += cos(time * 1.25 + uv.y * 6.0) * .07 * anchored;
+            float sway = sin(
+              time * 1.5 * motionRate.x + motionPhase.x + uv.y * 5.0
+            ) * motionAmplitude.x * anchored;
+            p.x += sway + sin(
+              time * 2.1 * motionRate.y + motionPhase.y + uv.y * 8.0
+            ) * motionAmplitude.y * anchored;
+            p.z += cos(
+              time * 1.25 * motionRate.z + motionPhase.z + uv.y * 6.0
+            ) * motionAmplitude.z * anchored;
             p = mix(p, straightPosition, straighten);
             p += (closedPosition - straightPosition) * closing;
             vLocal = p;
@@ -1873,6 +1905,9 @@
           closing: { value: 0 },
           gridPlane: { value: gridPlaneWorld },
           lightDirection: { value: coneLightDirection },
+          motionRate: { value: stemMotionRate },
+          motionAmplitude: { value: stemMotionAmplitude },
+          motionPhase: { value: stemMotionPhase },
           mouthColor: { value: new THREE.Color(0xb3a2e5) },
           deepColor: { value: new THREE.Color(0x7869b2) }
         },
@@ -1883,6 +1918,9 @@
           uniform float time;
           uniform float straighten;
           uniform float closing;
+          uniform vec3 motionRate;
+          uniform vec3 motionAmplitude;
+          uniform vec3 motionPhase;
           varying vec2 vUv;
           varying vec3 vNormalView;
           varying vec3 vWorldPosition;
@@ -1890,10 +1928,16 @@
             vUv = uv;
             vec3 p = position;
             float anchored = sin(pathV * 3.14159265);
-            float sway = sin(time * 1.5 + pathV * 5.0) * .1 * anchored;
+            float sway = sin(
+              time * 1.5 * motionRate.x + motionPhase.x + pathV * 5.0
+            ) * motionAmplitude.x * anchored;
             p.x += sway
-              + sin(time * 2.1 + pathV * 8.0) * .028 * anchored;
-            p.z += cos(time * 1.25 + pathV * 6.0) * .07 * anchored;
+              + sin(
+                time * 2.1 * motionRate.y + motionPhase.y + pathV * 8.0
+              ) * motionAmplitude.y * anchored;
+            p.z += cos(
+              time * 1.25 * motionRate.z + motionPhase.z + pathV * 6.0
+            ) * motionAmplitude.z * anchored;
             p = mix(p, straightPosition, straighten);
             p += (closedPosition - straightPosition) * closing;
             vNormalView = normalize(normalMatrix * normal);
@@ -1951,6 +1995,10 @@
         aperturePitchMotion,
         apertureYawMotion,
         apertureRollMotion,
+        apertureMotionRate,
+        stemMotionRate,
+        stemMotionAmplitude,
+        stemMotionPhase,
         tubePoint: curvePoint,
         closedY: closedYAt,
         closedMouthY: closedYAt(1, endPosition.y),
@@ -1978,6 +2026,9 @@
     function coneTubeCenter(cone, pathV) {
       const curve = cone.userData.tubePoint(pathV);
       const shaderTime = clock.elapsedTime + cone.userData.seed;
+      const motionRate = cone.userData.stemMotionRate;
+      const motionAmplitude = cone.userData.stemMotionAmplitude;
+      const motionPhase = cone.userData.stemMotionPhase;
       const anchored = Math.sin(pathV * Math.PI);
       const straighten = THREE.MathUtils.clamp(
         cone.userData.closeProgress,
@@ -1987,12 +2038,24 @@
       const point = new THREE.Vector3(
         curve.x
           + (
-            Math.sin(shaderTime * 1.5 + pathV * 5) * .1
-            + Math.sin(shaderTime * 2.1 + pathV * 8) * .028
+            Math.sin(
+              shaderTime * 1.5 * motionRate.x
+                + motionPhase.x
+                + pathV * 5
+            ) * motionAmplitude.x
+            + Math.sin(
+              shaderTime * 2.1 * motionRate.y
+                + motionPhase.y
+                + pathV * 8
+            ) * motionAmplitude.y
           ) * anchored,
         curve.y,
         curve.z
-          + Math.cos(shaderTime * 1.25 + pathV * 6) * .07 * anchored
+          + Math.cos(
+            shaderTime * 1.25 * motionRate.z
+              + motionPhase.z
+              + pathV * 6
+          ) * motionAmplitude.z * anchored
       );
       point.lerp(new THREE.Vector3(0, curve.y, 0), straighten);
       point.y = THREE.MathUtils.lerp(
@@ -3233,13 +3296,13 @@
               horizontalGrowth + Math.cos(time * 1.4 + data.seed) * .035 * eased
             );
             cone.rotation.x = Math.sin(
-              time * .58 + data.seed * 1.27
+              time * data.apertureMotionRate.x + data.seed * 1.27
             ) * data.aperturePitchMotion;
             cone.rotation.y = Math.sin(
-              time * .65 + data.seed
+              time * data.apertureMotionRate.y + data.seed
             ) * data.apertureYawMotion;
             cone.rotation.z = Math.sin(
-              time * .79 + data.seed * 1.43
+              time * data.apertureMotionRate.z + data.seed * 1.43
             ) * data.apertureRollMotion;
           }
           data.mouth.scale.set(1, .82, 1);
