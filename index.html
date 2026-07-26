@@ -1200,15 +1200,26 @@
     const aimHit = new THREE.Vector3();
     const tmp = new THREE.Vector3();
     const board = new THREE.Group();
+    const gridPlaneWorld = new THREE.Vector4(0, 1, 0, 0);
     board.position.z = -1.15;
     scene.add(board);
 
     function applyBoardAngle() {
       board.rotation.x = THREE.MathUtils.degToRad(settings.boardAngle);
       board.updateMatrixWorld(true);
+      const boardNormal = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(board.quaternion)
+        .normalize();
       aimPlane.setFromNormalAndCoplanarPoint(
-        new THREE.Vector3(0, 1, 0).applyQuaternion(board.quaternion).normalize(),
+        boardNormal,
         board.localToWorld(new THREE.Vector3(0, .13, 0))
+      );
+      const gridPoint = board.localToWorld(new THREE.Vector3(0, -.015, 0));
+      gridPlaneWorld.set(
+        boardNormal.x,
+        boardNormal.y,
+        boardNormal.z,
+        -boardNormal.dot(gridPoint)
       );
     }
 
@@ -1423,8 +1434,10 @@
     function makeCone() {
       const group = new THREE.Group();
       const segments = 48;
-      const rings = 25;
+      const rings = 40;
       const verts = [];
+      const straightVerts = [];
+      const closedVerts = [];
       const indices = [];
       const uvs = [];
       const baseRadius = .09 + Math.random() * .025;
@@ -1482,6 +1495,30 @@
           )
         );
       };
+      const mouthRadius = radiusAt(1, curvePoint(1));
+      const closedRadiusAt = v => {
+        const shaft = .055 + THREE.MathUtils.smoothstep(v, .05, .72) * .085;
+        const bulbProgress = THREE.MathUtils.clamp((v - .45) / .55, 0, 1);
+        const roundedBulb = (
+          Math.pow(bulbProgress, 4)
+          * Math.pow(1 - bulbProgress, 2)
+        ) / (16 / 729);
+        const lipSupport = THREE.MathUtils.smoothstep(v, .8, 1) * .09;
+        return mouthRadius * Math.max(
+          .05,
+          shaft + roundedBulb * .3 + lipSupport
+        );
+      };
+      const lipBaseV = .95;
+      const lipBaseCurve = curvePoint(lipBaseV);
+      const lipBaseY = (
+        lipBaseCurve.y
+        - THREE.MathUtils.smoothstep(lipBaseV, .86, 1) * .105
+      );
+      const closedYAt = (v, y) => {
+        const compressedY = y - THREE.MathUtils.smoothstep(v, .86, 1) * .105;
+        return v >= lipBaseV ? lipBaseY : compressedY;
+      };
       for (let j = 0; j <= rings; j++) {
         const v = j / rings;
         const curve = curvePoint(v);
@@ -1501,6 +1538,17 @@
             curve.y + radial.y,
             curve.z + radial.z
           );
+          straightVerts.push(
+            Math.cos(angle) * radius,
+            curve.y,
+            -Math.sin(angle) * radius * sideScale
+          );
+          const closedRadius = closedRadiusAt(v);
+          closedVerts.push(
+            Math.cos(angle) * closedRadius,
+            closedYAt(v, curve.y),
+            -Math.sin(angle) * closedRadius
+          );
           uvs.push(u, v);
         }
       }
@@ -1513,6 +1561,14 @@
       }
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+      geo.setAttribute(
+        'straightPosition',
+        new THREE.Float32BufferAttribute(straightVerts, 3)
+      );
+      geo.setAttribute(
+        'closedPosition',
+        new THREE.Float32BufferAttribute(closedVerts, 3)
+      );
       geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
       geo.setIndex(indices);
       geo.computeVertexNormals();
@@ -1525,14 +1581,22 @@
         uniforms: {
           time: { value: 0 },
           pulse: { value: 0 },
+          straighten: { value: 0 },
+          closing: { value: 0 },
+          gridPlane: { value: gridPlaneWorld },
           colorA: { value: new THREE.Color(0x766ee0) },
           colorB: { value: new THREE.Color(0xe1deff) }
         },
         vertexShader: `
+          attribute vec3 straightPosition;
+          attribute vec3 closedPosition;
           uniform float time;
+          uniform float straighten;
+          uniform float closing;
           varying vec2 vUv;
           varying vec3 vNormalView;
           varying vec3 vLocal;
+          varying vec3 vWorldPosition;
           void main() {
             vUv = uv;
             vec3 p = position;
@@ -1540,19 +1604,24 @@
             float sway = sin(time * 1.5 + uv.y * 5.0) * .1 * anchored;
             p.x += sway + sin(time * 2.1 + uv.y * 8.0) * .028 * anchored;
             p.z += cos(time * 1.25 + uv.y * 6.0) * .07 * anchored;
+            p = mix(p, straightPosition, straighten);
+            p += (closedPosition - straightPosition) * closing;
             vLocal = p;
             vNormalView = normalize(normalMatrix * normal);
+            vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
             gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
           }
         `,
         fragmentShader: `
           uniform float time;
           uniform float pulse;
+          uniform vec4 gridPlane;
           uniform vec3 colorA;
           uniform vec3 colorB;
           varying vec2 vUv;
           varying vec3 vNormalView;
           varying vec3 vLocal;
+          varying vec3 vWorldPosition;
 
           float hash(vec3 p) {
             p = fract(p * .3183099 + vec3(.17, .13, .11));
@@ -1574,6 +1643,9 @@
           }
 
           void main() {
+            if (dot(vWorldPosition, gridPlane.xyz) + gridPlane.w < 0.0) {
+              discard;
+            }
             float broad = noise3(vLocal * 1.7 + vec3(2.3, 5.1, 1.7));
             float detail = noise3(vLocal * 4.1 + vec3(7.4, 1.2, 3.8));
             float splotch = smoothstep(.64, .82, broad * .72 + detail * .28);
@@ -1608,9 +1680,11 @@
       group.add(mouth);
 
       const throat = new THREE.Group();
-      const throatRings = 18;
+      const throatRings = 28;
       const throatEndV = .52;
       const throatVerts = [];
+      const throatStraightVerts = [];
+      const throatClosedVerts = [];
       const throatIndices = [];
       const throatUvs = [];
       const throatPathValues = [];
@@ -1641,6 +1715,20 @@
             curve.y + radial.y,
             curve.z + radial.z
           );
+          throatStraightVerts.push(
+            Math.cos(angle) * radius,
+            curve.y,
+            -Math.sin(angle) * radius * sideScale
+          );
+          const closedRadius = Math.max(
+            .006,
+            closedRadiusAt(v) * edgeCoverage * taper
+          );
+          throatClosedVerts.push(
+            Math.cos(angle) * closedRadius,
+            closedYAt(v, curve.y),
+            -Math.sin(angle) * closedRadius
+          );
           throatUvs.push(u, 1 - t);
           throatPathValues.push(v);
         }
@@ -1656,6 +1744,14 @@
       throatGeo.setAttribute(
         'position',
         new THREE.Float32BufferAttribute(throatVerts, 3)
+      );
+      throatGeo.setAttribute(
+        'straightPosition',
+        new THREE.Float32BufferAttribute(throatStraightVerts, 3)
+      );
+      throatGeo.setAttribute(
+        'closedPosition',
+        new THREE.Float32BufferAttribute(throatClosedVerts, 3)
       );
       throatGeo.setAttribute(
         'uv',
@@ -1674,14 +1770,22 @@
         uniforms: {
           time: { value: 0 },
           pulse: { value: 0 },
+          straighten: { value: 0 },
+          closing: { value: 0 },
+          gridPlane: { value: gridPlaneWorld },
           mouthColor: { value: new THREE.Color(0x8b85de) },
           deepColor: { value: new THREE.Color(0x625cb2) }
         },
         vertexShader: `
           attribute float pathV;
+          attribute vec3 straightPosition;
+          attribute vec3 closedPosition;
           uniform float time;
+          uniform float straighten;
+          uniform float closing;
           varying vec2 vUv;
           varying vec3 vNormalView;
+          varying vec3 vWorldPosition;
           void main() {
             vUv = uv;
             vec3 p = position;
@@ -1690,17 +1794,25 @@
             p.x += sway
               + sin(time * 2.1 + pathV * 8.0) * .028 * anchored;
             p.z += cos(time * 1.25 + pathV * 6.0) * .07 * anchored;
+            p = mix(p, straightPosition, straighten);
+            p += (closedPosition - straightPosition) * closing;
             vNormalView = normalize(normalMatrix * normal);
+            vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
             gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
           }
         `,
         fragmentShader: `
           uniform float pulse;
+          uniform vec4 gridPlane;
           uniform vec3 mouthColor;
           uniform vec3 deepColor;
           varying vec2 vUv;
           varying vec3 vNormalView;
+          varying vec3 vWorldPosition;
           void main() {
+            if (dot(vWorldPosition, gridPlane.xyz) + gridPlane.w < 0.0) {
+              discard;
+            }
             float axialDepth = pow(clamp(vUv.y, 0.0, 1.0), .72);
             float wallFacing = abs(dot(
               normalize(vNormalView),
@@ -1721,13 +1833,24 @@
       const entryLight = new THREE.PointLight(0xc5c0ff, 0, 3.8, 2);
       entryLight.position.copy(endPosition);
       group.add(entryLight);
+      const uprightMouthQuaternion = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 0, 1),
+        new THREE.Vector3(0, 1, 0)
+      );
 
       group.userData = {
         mat, innerMat, entryLight, mouth, throat, spawn: 0, pulse: 0, hit: false,
         seed: Math.random() * 10,
         tubePoint: curvePoint,
+        closedY: closedYAt,
+        closedMouthY: closedYAt(1, endPosition.y),
         mouthPosition: endPosition.clone(),
+        mouthBaseQuaternion: bellOrientation.clone(),
+        uprightMouthQuaternion,
         retreat: 0,
+        closeProgress: 0,
+        diameterClose: 0,
+        currentClosing: 0,
         accepting: false,
         reserved: false
       };
@@ -1746,13 +1869,26 @@
       const curve = cone.userData.tubePoint(pathV);
       const shaderTime = clock.elapsedTime + cone.userData.seed;
       const anchored = Math.sin(pathV * Math.PI);
+      const straighten = THREE.MathUtils.clamp(
+        cone.userData.closeProgress,
+        0,
+        1
+      );
       const point = new THREE.Vector3(
         curve.x
-          + Math.sin(shaderTime * 1.5 + pathV * 5) * .1 * anchored
-          + Math.sin(shaderTime * 2.1 + pathV * 8) * .028 * anchored,
+          + (
+            Math.sin(shaderTime * 1.5 + pathV * 5) * .1
+            + Math.sin(shaderTime * 2.1 + pathV * 8) * .028
+          ) * anchored,
         curve.y,
         curve.z
           + Math.cos(shaderTime * 1.25 + pathV * 6) * .07 * anchored
+      );
+      point.lerp(new THREE.Vector3(0, curve.y, 0), straighten);
+      point.y = THREE.MathUtils.lerp(
+        point.y,
+        cone.userData.closedY(pathV, curve.y),
+        cone.userData.currentClosing
       );
       return point
         .multiply(cone.scale)
@@ -1783,12 +1919,50 @@
       );
       const remaining = Math.max(.015, 1 - retreat);
       const baseScale = cone.userData.retreatBaseScale;
-      cone.scale.set(
-        (baseScale?.x ?? .92) * remaining,
-        (baseScale?.y ?? 1) * remaining,
-        (baseScale?.z ?? .92) * remaining
+      const straighten = THREE.MathUtils.clamp(
+        cone.userData.closeProgress,
+        0,
+        1
       );
-      cone.position.y = -retreat * .16;
+      const lateHeightCollapse = THREE.MathUtils.smoothstep(
+        retreatProgress,
+        .58,
+        1
+      );
+      const closing = THREE.MathUtils.lerp(
+        cone.userData.diameterClose,
+        1,
+        retreat
+      );
+      cone.userData.currentClosing = closing;
+      cone.scale.set(
+        baseScale?.x ?? .92,
+        (baseScale?.y ?? 1) * (1 - lateHeightCollapse * .94),
+        baseScale?.z ?? .92
+      );
+      cone.quaternion
+        .copy(cone.userData.retreatBaseQuaternion)
+        .slerp(new THREE.Quaternion(), straighten);
+      cone.position.y = -retreat * 2.65;
+      cone.visible = retreatProgress < .992;
+      cone.userData.mat.uniforms.straighten.value = straighten;
+      cone.userData.mat.uniforms.closing.value = closing;
+      cone.userData.innerMat.uniforms.straighten.value = straighten;
+      cone.userData.innerMat.uniforms.closing.value = closing;
+      cone.userData.mouth.position.lerpVectors(
+        cone.userData.mouthPosition,
+        new THREE.Vector3(0, cone.userData.mouthPosition.y, 0),
+        straighten
+      );
+      cone.userData.mouth.position.y = THREE.MathUtils.lerp(
+        cone.userData.mouth.position.y,
+        cone.userData.closedMouthY,
+        closing
+      );
+      cone.userData.mouth.quaternion
+        .copy(cone.userData.mouthBaseQuaternion)
+        .slerp(cone.userData.uprightMouthQuaternion, straighten);
+      cone.userData.entryLight.position.copy(cone.userData.mouth.position);
       cone.userData.mouth.scale.set(1, .82, 1);
       return remaining;
     }
@@ -2535,6 +2709,7 @@
       if (target) {
         target.userData.reserved = true;
         target.userData.retreatBaseScale = target.scale.clone();
+        target.userData.retreatBaseQuaternion = target.quaternion.clone();
         destination.copy(coneMouthCenter(target));
       }
       const missHole = target
@@ -3047,6 +3222,16 @@
               1
             );
             f.target.userData.pulse = (.18 + insertion * .82) * retreatFade;
+            f.target.userData.closeProgress = THREE.MathUtils.smoothstep(
+              insertionLinear,
+              .05,
+              1
+            );
+            f.target.userData.diameterClose = .86 * THREE.MathUtils.smoothstep(
+              insertion,
+              .12,
+              1
+            );
             f.target.userData.accepting = true;
             f.target.userData.retreat = retreatRaw;
             const remaining = applyConeRetreat(f.target, retreatRaw);
