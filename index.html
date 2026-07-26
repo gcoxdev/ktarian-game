@@ -1513,7 +1513,9 @@
 
       const mat = new THREE.ShaderMaterial({
         transparent: false,
-        side: THREE.DoubleSide,
+        // The generated tube winds inward; its back faces are the visible exterior.
+        // The separate throat mesh owns everything visible through the aperture.
+        side: THREE.BackSide,
         uniforms: {
           time: { value: 0 },
           pulse: { value: 0 },
@@ -1604,29 +1606,51 @@
       throat.quaternion.copy(bellOrientation);
       throat.scale.y = .82;
 
-      const funnelDepth = .78;
+      const funnelDepth = 1.08;
+      const mouthBulgeDistance = (1 - bulgeCenter) / bulgeWidth;
+      const mouthRadius = baseRadius
+        + flareScale
+        + .07
+        + Math.exp(-mouthBulgeDistance * mouthBulgeDistance) * bulgeStrength;
       const innerWall = new THREE.Mesh(
-        new THREE.CylinderGeometry(.84, .13, funnelDepth, 64, 8, true),
+        new THREE.CylinderGeometry(
+          mouthRadius * 1.06,
+          .006,
+          funnelDepth,
+          64,
+          16,
+          true
+        ),
         new THREE.ShaderMaterial({
-          side: THREE.BackSide,
+          side: THREE.DoubleSide,
+          depthTest: true,
+          depthWrite: true,
           uniforms: {
-            rimColor: { value: new THREE.Color(0x6861bd) },
-            deepColor: { value: new THREE.Color(0x090817) }
+            mouthColor: { value: new THREE.Color(0x8b85de) },
+            deepColor: { value: new THREE.Color(0x625cb2) }
           },
           vertexShader: `
             varying vec2 vUv;
+            varying vec3 vNormalView;
             void main() {
               vUv = uv;
+              vNormalView = normalize(normalMatrix * normal);
               gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
             }
           `,
           fragmentShader: `
-            uniform vec3 rimColor;
+            uniform vec3 mouthColor;
             uniform vec3 deepColor;
             varying vec2 vUv;
+            varying vec3 vNormalView;
             void main() {
-              float depthShade = smoothstep(0.0, .88, vUv.y);
-              vec3 color = mix(deepColor, rimColor, depthShade);
+              float axialDepth = pow(clamp(vUv.y, 0.0, 1.0), .72);
+              float wallFacing = abs(dot(
+                normalize(vNormalView),
+                normalize(vec3(-.25, .45, 1.0))
+              ));
+              vec3 color = mix(deepColor, mouthColor, axialDepth);
+              color *= .92 + wallFacing * .08;
               gl_FragColor = vec4(color, 1.0);
             }
           `
@@ -1634,16 +1658,7 @@
       );
       innerWall.rotation.x = Math.PI / 2;
       innerWall.position.z = -funnelDepth / 2;
-
-      const deepThroat = new THREE.Mesh(
-        new THREE.CircleGeometry(.135, 48),
-        new THREE.MeshBasicMaterial({
-          color: 0x05040d,
-          side: THREE.DoubleSide
-        })
-      );
-      deepThroat.position.z = -funnelDepth - .006;
-      throat.add(innerWall, deepThroat);
+      throat.add(innerWall);
       group.add(throat);
 
       group.userData = {
@@ -1759,6 +1774,28 @@
       halo.position.y = .3;
       group.add(halo);
       return group;
+    }
+
+    function randomDiscEntryQuaternion() {
+      const tiltSample = Math.random();
+      const tilt = tiltSample > .88
+        ? Math.PI / 2
+        : (tiltSample / .88) * (Math.PI / 2);
+      const azimuth = Math.random() * Math.PI * 2;
+      const normal = new THREE.Vector3(
+        Math.sin(tilt) * Math.cos(azimuth),
+        Math.cos(tilt),
+        Math.sin(tilt) * Math.sin(azimuth)
+      );
+      const orientation = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        normal
+      );
+      const roll = new THREE.Quaternion().setFromAxisAngle(
+        normal,
+        Math.random() * Math.PI * 2
+      );
+      return roll.multiply(orientation);
     }
 
     const reticle = new THREE.Group();
@@ -2474,6 +2511,9 @@
         curveSkew,
         spinAxis,
         spinSpeed: (Math.random() < .5 ? -1 : 1) * (.22 + Math.random() * .34),
+        spinPhase: 0,
+        launchQuaternion: launchedDisc.quaternion.clone(),
+        entryTargetQuaternion: target ? randomDiscEntryQuaternion() : null,
         startScale: launchedDisc.scale.x,
         entryQuaternion: null,
         targetEntryDirection: target ? coneEntryDirection(target) : null,
@@ -2895,7 +2935,13 @@
             const preEntry = THREE.MathUtils.smoothstep(approach, .52, 1);
             placeOnTargetFlightCurve(f, approach);
             f.disc.scale.setScalar(f.startScale * (1 - preEntry * .4));
-            f.disc.rotateOnAxis(f.spinAxis, f.spinSpeed * dt);
+            f.spinPhase += f.spinSpeed * dt;
+            f.disc.quaternion.copy(f.launchQuaternion);
+            f.disc.rotateOnAxis(f.spinAxis, f.spinPhase);
+            f.disc.quaternion.slerp(
+              f.entryTargetQuaternion,
+              THREE.MathUtils.smoothstep(approach, .34, 1)
+            );
           } else {
             const entryRaw = Math.min(
               1,
