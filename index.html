@@ -1460,28 +1460,34 @@
           dz: bend > 0 ? (2 * bend * bendReach - .75 * bendCurve) / bendSpan : 0
         };
       };
-      for (let j = 0; j <= rings; j++) {
-        const v = j / rings;
-        const curve = curvePoint(v);
+      const radiusAt = (v, curve) => {
         const bulgeDistance = (v - bulgeCenter) / bulgeWidth;
         const midBulge = Math.exp(-bulgeDistance * bulgeDistance) * bulgeStrength;
-        const radius = baseRadius
+        return baseRadius
           + Math.pow(v, flarePower) * flareScale
           + Math.pow(curve.bend, 4) * .07
           + midBulge;
-        const sideScale = 1 - Math.pow(curve.bend, 2) * .18;
+      };
+      const orientationAt = (v, curve) => {
         const mouthTurnRaw = Math.min(1, Math.max(0, (v - .58) / .42));
         const mouthTurn = mouthTurnRaw * mouthTurnRaw * (3 - 2 * mouthTurnRaw);
-        const ringOrientation = new THREE.Quaternion().setFromUnitVectors(
+        const orientation = new THREE.Quaternion().setFromUnitVectors(
           new THREE.Vector3(0, 0, 1),
           new THREE.Vector3(0, curve.dy, curve.dz).normalize()
         );
-        ringOrientation.multiply(
+        return orientation.multiply(
           new THREE.Quaternion().setFromAxisAngle(
             new THREE.Vector3(0, 1, 0),
             mouthYaw * mouthTurn
           )
         );
+      };
+      for (let j = 0; j <= rings; j++) {
+        const v = j / rings;
+        const curve = curvePoint(v);
+        const radius = radiusAt(v, curve);
+        const sideScale = 1 - Math.pow(curve.bend, 2) * .18;
+        const ringOrientation = orientationAt(v, curve);
         for (let i = 0; i <= segments; i++) {
           const u = i / segments;
           const angle = u * Math.PI * 2;
@@ -1602,67 +1608,114 @@
       group.add(mouth);
 
       const throat = new THREE.Group();
-      throat.position.copy(endPosition);
-      throat.quaternion.copy(bellOrientation);
-      throat.scale.y = .82;
-
-      const funnelDepth = 1.08;
-      const mouthBulgeDistance = (1 - bulgeCenter) / bulgeWidth;
-      const mouthRadius = baseRadius
-        + flareScale
-        + .07
-        + Math.exp(-mouthBulgeDistance * mouthBulgeDistance) * bulgeStrength;
-      const innerWall = new THREE.Mesh(
-        new THREE.CylinderGeometry(
-          mouthRadius * 1.06,
-          .006,
-          funnelDepth,
-          64,
-          16,
-          true
-        ),
-        new THREE.ShaderMaterial({
-          side: THREE.DoubleSide,
-          depthTest: true,
-          depthWrite: true,
-          uniforms: {
-            mouthColor: { value: new THREE.Color(0x8b85de) },
-            deepColor: { value: new THREE.Color(0x625cb2) }
-          },
-          vertexShader: `
-            varying vec2 vUv;
-            varying vec3 vNormalView;
-            void main() {
-              vUv = uv;
-              vNormalView = normalize(normalMatrix * normal);
-              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-          `,
-          fragmentShader: `
-            uniform vec3 mouthColor;
-            uniform vec3 deepColor;
-            varying vec2 vUv;
-            varying vec3 vNormalView;
-            void main() {
-              float axialDepth = pow(clamp(vUv.y, 0.0, 1.0), .72);
-              float wallFacing = abs(dot(
-                normalize(vNormalView),
-                normalize(vec3(-.25, .45, 1.0))
-              ));
-              vec3 color = mix(deepColor, mouthColor, axialDepth);
-              color *= .92 + wallFacing * .08;
-              gl_FragColor = vec4(color, 1.0);
-            }
-          `
-        })
+      const throatRings = 18;
+      const throatEndV = .52;
+      const throatVerts = [];
+      const throatIndices = [];
+      const throatUvs = [];
+      const throatPathValues = [];
+      for (let j = 0; j <= throatRings; j++) {
+        const t = j / throatRings;
+        const v = THREE.MathUtils.lerp(1, throatEndV, t);
+        const curve = curvePoint(v);
+        const outerRadius = radiusAt(v, curve);
+        const edgeCoverage = THREE.MathUtils.lerp(
+          1.06,
+          .78,
+          THREE.MathUtils.smoothstep(t, 0, .22)
+        );
+        const taper = 1 - THREE.MathUtils.smoothstep(t, .04, 1);
+        const radius = Math.max(.006, outerRadius * edgeCoverage * taper);
+        const sideScale = 1 - Math.pow(curve.bend, 2) * .18;
+        const ringOrientation = orientationAt(v, curve);
+        for (let i = 0; i <= segments; i++) {
+          const u = i / segments;
+          const angle = u * Math.PI * 2;
+          const radial = new THREE.Vector3(
+            Math.cos(angle) * radius,
+            Math.sin(angle) * radius * sideScale,
+            0
+          ).applyQuaternion(ringOrientation);
+          throatVerts.push(
+            curve.x + radial.x,
+            curve.y + radial.y,
+            curve.z + radial.z
+          );
+          throatUvs.push(u, 1 - t);
+          throatPathValues.push(v);
+        }
+      }
+      for (let j = 0; j < throatRings; j++) {
+        for (let i = 0; i < segments; i++) {
+          const a = j * (segments + 1) + i;
+          const b = a + segments + 1;
+          throatIndices.push(a, b, a + 1, b, b + 1, a + 1);
+        }
+      }
+      const throatGeo = new THREE.BufferGeometry();
+      throatGeo.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(throatVerts, 3)
       );
-      innerWall.rotation.x = Math.PI / 2;
-      innerWall.position.z = -funnelDepth / 2;
+      throatGeo.setAttribute(
+        'uv',
+        new THREE.Float32BufferAttribute(throatUvs, 2)
+      );
+      throatGeo.setAttribute(
+        'pathV',
+        new THREE.Float32BufferAttribute(throatPathValues, 1)
+      );
+      throatGeo.setIndex(throatIndices);
+      throatGeo.computeVertexNormals();
+      const innerMat = new THREE.ShaderMaterial({
+        side: THREE.DoubleSide,
+        depthTest: true,
+        depthWrite: true,
+        uniforms: {
+          time: { value: 0 },
+          mouthColor: { value: new THREE.Color(0x8b85de) },
+          deepColor: { value: new THREE.Color(0x625cb2) }
+        },
+        vertexShader: `
+          attribute float pathV;
+          uniform float time;
+          varying vec2 vUv;
+          varying vec3 vNormalView;
+          void main() {
+            vUv = uv;
+            vec3 p = position;
+            float anchored = sin(pathV * 3.14159265);
+            float sway = sin(time * 1.5 + pathV * 5.0) * .1 * anchored;
+            p.x += sway
+              + sin(time * 2.1 + pathV * 8.0) * .028 * anchored;
+            p.z += cos(time * 1.25 + pathV * 6.0) * .07 * anchored;
+            vNormalView = normalize(normalMatrix * normal);
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 mouthColor;
+          uniform vec3 deepColor;
+          varying vec2 vUv;
+          varying vec3 vNormalView;
+          void main() {
+            float axialDepth = pow(clamp(vUv.y, 0.0, 1.0), .72);
+            float wallFacing = abs(dot(
+              normalize(vNormalView),
+              normalize(vec3(-.25, .45, 1.0))
+            ));
+            vec3 color = mix(deepColor, mouthColor, axialDepth);
+            color *= .92 + wallFacing * .08;
+            gl_FragColor = vec4(color, 1.0);
+          }
+        `
+      });
+      const innerWall = new THREE.Mesh(throatGeo, innerMat);
       throat.add(innerWall);
       group.add(throat);
 
       group.userData = {
-        mat, mouth, throat, spawn: 0, pulse: 0, hit: false,
+        mat, innerMat, mouth, throat, spawn: 0, pulse: 0, hit: false,
         seed: Math.random() * 10,
         mouthPosition: endPosition.clone(),
         retreat: 0,
@@ -1710,7 +1763,6 @@
       );
       cone.position.y = -retreat * .16;
       cone.userData.mouth.scale.set(1, .82, 1);
-      cone.userData.throat.scale.set(1, .82, 1);
       return remaining;
     }
 
@@ -2824,13 +2876,13 @@
             cone.rotation.z = Math.sin(time * .9 + data.seed) * .035;
           }
           data.mouth.scale.set(1, .82, 1);
-          data.throat.scale.set(1, .82, 1);
         } else {
           data.pulse = Math.max(0, data.pulse - dt * 1.7);
           if (data.hit) data.retreat = Math.min(1, data.retreat + dt * .62);
           applyConeRetreat(cone, data.retreat);
         }
         data.mat.uniforms.time.value = time + data.seed;
+        data.innerMat.uniforms.time.value = time + data.seed;
         data.mat.uniforms.pulse.value = data.pulse;
       });
 
