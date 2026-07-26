@@ -1717,6 +1717,7 @@
       group.userData = {
         mat, innerMat, mouth, throat, spawn: 0, pulse: 0, hit: false,
         seed: Math.random() * 10,
+        tubePoint: curvePoint,
         mouthPosition: endPosition.clone(),
         retreat: 0,
         accepting: false,
@@ -1728,6 +1729,24 @@
 
     function coneMouthCenter(cone) {
       return cone.userData.mouthPosition.clone()
+        .multiply(cone.scale)
+        .applyQuaternion(cone.quaternion)
+        .add(cone.position);
+    }
+
+    function coneTubeCenter(cone, pathV) {
+      const curve = cone.userData.tubePoint(pathV);
+      const shaderTime = clock.elapsedTime + cone.userData.seed;
+      const anchored = Math.sin(pathV * Math.PI);
+      const point = new THREE.Vector3(
+        curve.x
+          + Math.sin(shaderTime * 1.5 + pathV * 5) * .1 * anchored
+          + Math.sin(shaderTime * 2.1 + pathV * 8) * .028 * anchored,
+        curve.y,
+        curve.z
+          + Math.cos(shaderTime * 1.25 + pathV * 6) * .07 * anchored
+      );
+      return point
         .multiply(cone.scale)
         .applyQuaternion(cone.quaternion)
         .add(cone.position);
@@ -2553,7 +2572,7 @@
         target,
         progress: 0,
         duration: target
-          ? 2.05 + (1 - state.charge) * .5
+          ? 3 + (1 - state.charge) * .5
           : 1.12 + (1 - state.charge) * .48,
         curveNormal,
         curveLift: target
@@ -2999,16 +3018,26 @@
               1,
               (p - entryStart) / (1 - entryStart)
             );
+            const insertionEnd = .42;
+            const insertionLinear = Math.min(1, entryRaw / insertionEnd);
+            const insertion = insertionLinear * (
+              1 + insertionLinear - insertionLinear * insertionLinear
+            );
+            const tubePathV = THREE.MathUtils.lerp(1, .66, insertion);
             if (!f.entryQuaternion) {
               f.entryQuaternion = f.disc.quaternion.clone();
             }
-            const retreatRaw = entryRaw;
+            const retreatRaw = Math.max(
+              0,
+              (entryRaw - insertionEnd) / (1 - insertionEnd)
+            );
             f.target.userData.pulse = retreatRaw;
             f.target.userData.accepting = true;
             f.target.userData.retreat = retreatRaw;
             const remaining = applyConeRetreat(f.target, retreatRaw);
-            f.disc.position.copy(coneMouthCenter(f.target));
-            f.disc.scale.setScalar(f.startScale * .6 * remaining);
+            f.disc.position.copy(coneTubeCenter(f.target, tubePathV));
+            const insertedScale = THREE.MathUtils.lerp(.6, .085, insertion);
+            f.disc.scale.setScalar(f.startScale * insertedScale * remaining);
             f.disc.quaternion.copy(f.entryQuaternion);
           }
         } else {
