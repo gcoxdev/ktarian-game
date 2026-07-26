@@ -1673,6 +1673,7 @@
         depthWrite: true,
         uniforms: {
           time: { value: 0 },
+          pulse: { value: 0 },
           mouthColor: { value: new THREE.Color(0x8b85de) },
           deepColor: { value: new THREE.Color(0x625cb2) }
         },
@@ -1694,6 +1695,7 @@
           }
         `,
         fragmentShader: `
+          uniform float pulse;
           uniform vec3 mouthColor;
           uniform vec3 deepColor;
           varying vec2 vUv;
@@ -1706,6 +1708,9 @@
             ));
             vec3 color = mix(deepColor, mouthColor, axialDepth);
             color *= .92 + wallFacing * .08;
+            vec3 entryGlow = vec3(.86, .84, 1.0);
+            color = mix(color, entryGlow, pulse * .46);
+            color *= 1.0 + pulse * .18;
             gl_FragColor = vec4(color, 1.0);
           }
         `
@@ -1713,9 +1718,12 @@
       const innerWall = new THREE.Mesh(throatGeo, innerMat);
       throat.add(innerWall);
       group.add(throat);
+      const entryLight = new THREE.PointLight(0xc5c0ff, 0, 3.8, 2);
+      entryLight.position.copy(endPosition);
+      group.add(entryLight);
 
       group.userData = {
-        mat, innerMat, mouth, throat, spawn: 0, pulse: 0, hit: false,
+        mat, innerMat, entryLight, mouth, throat, spawn: 0, pulse: 0, hit: false,
         seed: Math.random() * 10,
         tubePoint: curvePoint,
         mouthPosition: endPosition.clone(),
@@ -2903,6 +2911,8 @@
         data.mat.uniforms.time.value = time + data.seed;
         data.innerMat.uniforms.time.value = time + data.seed;
         data.mat.uniforms.pulse.value = data.pulse;
+        data.innerMat.uniforms.pulse.value = data.pulse;
+        data.entryLight.intensity = data.pulse * 3.2;
       });
 
       // Slow free motion with local collision repulsion in the player-side two-row band.
@@ -3031,7 +3041,12 @@
               0,
               (entryRaw - insertionEnd) / (1 - insertionEnd)
             );
-            f.target.userData.pulse = retreatRaw;
+            const retreatFade = 1 - THREE.MathUtils.smoothstep(
+              retreatRaw,
+              .15,
+              1
+            );
+            f.target.userData.pulse = (.18 + insertion * .82) * retreatFade;
             f.target.userData.accepting = true;
             f.target.userData.retreat = retreatRaw;
             const remaining = applyConeRetreat(f.target, retreatRaw);
