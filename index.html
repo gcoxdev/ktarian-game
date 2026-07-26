@@ -456,12 +456,44 @@
       border-left: 1px solid rgba(157,149,255,.18);
     }
 
+    .record-group__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 22px;
+    }
+
     .high-scores__title {
-      margin: 0 0 22px;
+      margin: 0;
       color: #9189ff;
       font: 600 9px/1 "Michroma", sans-serif;
       letter-spacing: .34em;
       text-transform: uppercase;
+    }
+
+    .records-reset {
+      flex: none;
+      padding: 3px 0 3px 7px;
+      border: 0;
+      color: rgba(229,225,255,.36);
+      background: transparent;
+      font: 600 7px/1 "Michroma", sans-serif;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: color .2s ease, text-shadow .2s ease;
+    }
+
+    .records-reset:hover,
+    .records-reset:focus-visible {
+      color: rgba(229,225,255,.78);
+      outline: none;
+    }
+
+    .records-reset.is-confirming {
+      color: #e98a70;
+      text-shadow: 0 0 12px rgba(233,91,58,.3);
     }
 
     .record-group + .record-group {
@@ -822,7 +854,9 @@
         border-left: 0;
         border-top: 1px solid rgba(157,149,255,.18);
       }
-      .high-scores__title { margin-bottom: 9px; font-size: 8px; }
+      .record-group__header { margin-bottom: 9px; }
+      .high-scores__title { font-size: 8px; }
+      .records-reset { font-size: 6px; letter-spacing: .1em; }
       .record-group + .record-group { margin-top: 0; }
       .score-list li {
         grid-template-columns: 20px minmax(0, 1fr) auto;
@@ -915,7 +949,8 @@
         border-top: 0;
         border-left: 1px solid rgba(157,149,255,.18);
       }
-      .high-scores__title { margin-bottom: 6px; font-size: 8px; }
+      .record-group__header { margin-bottom: 6px; }
+      .high-scores__title { font-size: 8px; }
       .record-group + .record-group { margin-top: 0; }
       .score-list { display: block; }
       .score-list li {
@@ -1058,16 +1093,22 @@
           <button class="primary" id="startButton">Play game</button>
           <button class="primary primary--secondary" id="timedButton">Timed mode</button>
         </div>
-        <div class="mode-note">Timed mode · start at 90 · hits +2 · misses −5</div>
+        <div class="mode-note">Timed mode · start at 90 · hits +3 · misses −5</div>
         <div class="panel__foot">Mouse / touch · Space to charge · Esc to disengage</div>
       </div>
       <aside class="high-scores" aria-label="Game records">
         <section class="record-group" aria-labelledby="highScoresTitle">
-          <h2 class="high-scores__title" id="highScoresTitle">Game records</h2>
+          <div class="record-group__header">
+            <h2 class="high-scores__title" id="highScoresTitle">Game records</h2>
+            <button class="records-reset" id="classicScoresReset" type="button" aria-label="Reset game records">Reset</button>
+          </div>
           <ol class="score-list" id="scoreList"></ol>
         </section>
         <section class="record-group" aria-labelledby="timedScoresTitle">
-          <h2 class="high-scores__title" id="timedScoresTitle">Timed records</h2>
+          <div class="record-group__header">
+            <h2 class="high-scores__title" id="timedScoresTitle">Timed records</h2>
+            <button class="records-reset" id="timedScoresReset" type="button" aria-label="Reset timed records">Reset</button>
+          </div>
           <ol class="score-list" id="timedScoreList"></ol>
         </section>
       </aside>
@@ -1127,10 +1168,13 @@
       zoomOutput: document.querySelector('#zoomOutput'),
       settingsReset: document.querySelector('#settingsReset'),
       scoreList: document.querySelector('#scoreList'),
-      timedScoreList: document.querySelector('#timedScoreList')
+      timedScoreList: document.querySelector('#timedScoreList'),
+      classicScoresReset: document.querySelector('#classicScoresReset'),
+      timedScoresReset: document.querySelector('#timedScoresReset')
     };
 
     const settingsStorageKey = 'ktarian-field-settings-v1';
+    const zoomBaseline = 1.25;
     const settings = (() => {
       let saved = {};
       try {
@@ -1138,16 +1182,27 @@
       } catch {}
       const savedAngle = Number(saved.boardAngle);
       const savedZoom = Number(saved.zoom);
+      const normalizedSavedZoom = saved.zoomScale === 2
+        ? savedZoom
+        : savedZoom / zoomBaseline;
       return {
         opticalDevice: saved.opticalDevice !== false,
         boardAngle: Math.min(2, Math.max(-22, Number.isFinite(savedAngle) ? savedAngle : -22)),
-        zoom: Math.min(1.25, Math.max(.8, Number.isFinite(savedZoom) && savedZoom ? savedZoom : 1))
+        zoom: Math.min(1.25, Math.max(
+          .8,
+          Number.isFinite(normalizedSavedZoom) && normalizedSavedZoom
+            ? normalizedSavedZoom
+            : 1
+        ))
       };
     })();
 
     function saveSettings() {
       try {
-        localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
+        localStorage.setItem(
+          settingsStorageKey,
+          JSON.stringify({ ...settings, zoomScale: 2 })
+        );
       } catch {}
     }
 
@@ -1180,7 +1235,11 @@
       const portraitTablet = innerWidth > 720 && innerWidth <= 1024 && aspect <= 1;
       const compactLandscape = innerHeight <= 540 && aspect > 1.25;
       camera.aspect = aspect;
-      camera.zoom = (compactLandscape ? 1.42 : 1) * settings.zoom;
+      camera.zoom = (
+        (compactLandscape ? 1.42 : 1)
+        * zoomBaseline
+        * settings.zoom
+      );
       camera.fov = portraitPhone ? 52 : portraitTablet ? 44 : 40;
       camera.position.set(
         0,
@@ -1339,13 +1398,17 @@
     key.castShadow = true;
     key.shadow.mapSize.set(1024, 1024);
     scene.add(key, key.target);
-    const redLight = new THREE.PointLight(0xff2810, 7.5, 18, 2);
-    redLight.position.set(0, 2, 2);
-    scene.add(redLight);
-    const fieldSpotlight = new THREE.SpotLight(0xffd6b0, 28, 20, .34, .82, 1.35);
-    fieldSpotlight.position.set(0, 8.5, 0);
-    fieldSpotlight.target.position.set(0, 0, 0);
-    scene.add(fieldSpotlight, fieldSpotlight.target);
+    const fieldSpotlight = new THREE.SpotLight(
+      0xff6b42,
+      8,
+      6,
+      .38,
+      .85,
+      1.45
+    );
+    fieldSpotlight.position.set(0, -2.8, 0);
+    fieldSpotlight.target.position.set(0, .2, 0);
+    board.add(fieldSpotlight, fieldSpotlight.target);
 
     // Transparent field ghost — enough structure to catch highlights without becoming a board.
     const field = new THREE.Mesh(
@@ -1384,51 +1447,38 @@
 
     const holes = [];
     const holeGeo = new THREE.CircleGeometry(.54, 48);
-    const haloGeo = new THREE.RingGeometry(.43, .65, 48);
     for (let row = 0; row < 6; row++) {
       for (let col = 0; col < 7; col++) {
         const group = new THREE.Group();
-        const x = (col - 3) * 1.48;
-        const z = (row - 2.5) * 1.46;
+        const x = (col - 3) * 1.27;
+        const z = (row - 2.5) * 1.25;
         group.position.set(x, 0, z);
         const well = new THREE.Mesh(holeGeo, new THREE.MeshStandardMaterial({
-          color: 0x8f1008, emissive: 0xff210c, emissiveIntensity: .95,
-          roughness: .32, metalness: .25, side: THREE.DoubleSide
+          color: 0x620b07,
+          emissive: 0x760d06,
+          emissiveIntensity: .42,
+          roughness: .48,
+          metalness: .08,
+          transparent: true,
+          opacity: .9,
+          side: THREE.DoubleSide,
+          depthWrite: false
         }));
         well.rotation.x = -Math.PI / 2;
-        well.position.y = -.015;
-        const halo = new THREE.Mesh(haloGeo, new THREE.MeshBasicMaterial({
-          color: 0xff3215, transparent: true, opacity: .18, blending: THREE.AdditiveBlending,
-          side: THREE.DoubleSide, depthWrite: false
-        }));
-        halo.rotation.x = -Math.PI / 2;
-        halo.position.y = .025;
-        group.add(well, halo);
+        well.position.y = -.01;
+        group.add(well);
         board.add(group);
-        holes.push({ group, well, halo, row, col });
+        holes.push({ group, well, row, col });
       }
     }
-    const holeDark = new THREE.Color(0x741008);
-    const holeLit = new THREE.Color(0xff5a2d);
+    const holeDark = new THREE.Color(0x620b07);
+    const holeLit = new THREE.Color(0xa6321e);
+    const holeEmissionDark = new THREE.Color(0x760d06);
+    const holeEmissionLit = new THREE.Color(0xd74c32);
 
-    // A roaming pool of brightness across roughly a 3x3 section.
-    const glowCanvas = document.createElement('canvas');
-    glowCanvas.width = glowCanvas.height = 256;
-    const gc = glowCanvas.getContext('2d');
-    const grad = gc.createRadialGradient(128,128,0,128,128,128);
-    grad.addColorStop(0, 'rgba(255,246,220,.92)');
-    grad.addColorStop(.34, 'rgba(255,187,124,.48)');
-    grad.addColorStop(.7, 'rgba(255,92,48,.13)');
-    grad.addColorStop(1, 'rgba(255,35,10,0)');
-    gc.fillStyle = grad;
-    gc.fillRect(0,0,256,256);
-    const glowTexture = new THREE.CanvasTexture(glowCanvas);
-    const wanderGlow = new THREE.Mesh(
-      new THREE.PlaneGeometry(5.6, 5.6),
-      new THREE.MeshBasicMaterial({ map: glowTexture, transparent: true, opacity: .7, depthWrite: false, blending: THREE.AdditiveBlending })
-    );
-    wanderGlow.rotation.x = -Math.PI / 2;
-    wanderGlow.position.y = .06;
+    // Invisible guide for the warm light roaming beneath the board.
+    const wanderGlow = new THREE.Object3D();
+    wanderGlow.position.y = -2.8;
     board.add(wanderGlow);
 
     function makeCone() {
@@ -1457,6 +1507,15 @@
       const mouthYaw = THREE.MathUtils.degToRad(
         mouthYawDirection * (7 + Math.random() * 16)
       );
+      const cameraFacingAmount = Math.random() < .48
+        ? .42 + Math.random() * .34
+        : 0;
+      const cameraFacingNormal = new THREE.Vector3(0, .26, 1).normalize();
+      const aperturePitchMotion = THREE.MathUtils.degToRad(
+        cameraFacingAmount
+          ? 2.5 + Math.random() * 3.5
+          : .35 + Math.random() * .65
+      );
       const curvePoint = v => {
         const bend = Math.max(0, (v - bendStart) / bendSpan);
         const bendCurve = bend * bend;
@@ -1484,9 +1543,16 @@
       const orientationAt = (v, curve) => {
         const mouthTurnRaw = Math.min(1, Math.max(0, (v - .58) / .42));
         const mouthTurn = mouthTurnRaw * mouthTurnRaw * (3 - 2 * mouthTurnRaw);
+        const apertureNormal = new THREE.Vector3(0, curve.dy, curve.dz)
+          .normalize()
+          .lerp(
+            cameraFacingNormal,
+            cameraFacingAmount * mouthTurn
+          )
+          .normalize();
         const orientation = new THREE.Quaternion().setFromUnitVectors(
           new THREE.Vector3(0, 0, 1),
-          new THREE.Vector3(0, curve.dy, curve.dz).normalize()
+          apertureNormal
         );
         return orientation.multiply(
           new THREE.Quaternion().setFromAxisAngle(
@@ -1663,7 +1729,10 @@
       group.add(body);
 
       const end = curvePoint(1);
-      const endTangent = new THREE.Vector3(0, end.dy, end.dz).normalize();
+      const endTangent = new THREE.Vector3(0, end.dy, end.dz)
+        .normalize()
+        .lerp(cameraFacingNormal, cameraFacingAmount)
+        .normalize();
       const endPosition = new THREE.Vector3(end.x, end.y, end.z);
       const bellOrientation = new THREE.Quaternion().setFromUnitVectors(
         new THREE.Vector3(0, 0, 1),
@@ -1841,6 +1910,7 @@
       group.userData = {
         mat, innerMat, entryLight, mouth, throat, spawn: 0, pulse: 0, hit: false,
         seed: Math.random() * 10,
+        aperturePitchMotion,
         tubePoint: curvePoint,
         closedY: closedYAt,
         closedMouthY: closedYAt(1, endPosition.y),
@@ -1997,7 +2067,7 @@
         const coral = outerIndex % 2 === 1;
         const geometry = new THREE.CircleGeometry(radius, 64);
         const material = new THREE.MeshBasicMaterial({
-          color: coral ? 0xe98760 : 0x76100c,
+          color: coral ? 0x994832 : 0x76100c,
           transparent: true,
           opacity: coral ? .98 : .96
         });
@@ -2115,6 +2185,25 @@
       classic: 'ktarian-high-scores-v1',
       timed: 'ktarian-timed-high-scores-v1'
     };
+    const scoreScaleStorageKey = 'ktarian-score-scale-v2';
+
+    function migrateHighScoresToReducedScale() {
+      try {
+        if (localStorage.getItem(scoreScaleStorageKey) === '10-percent') return;
+        Object.values(scoreStorageKeys).forEach(key => {
+          const stored = JSON.parse(localStorage.getItem(key) || '[]');
+          if (!Array.isArray(stored)) return;
+          const migrated = stored.map(entry => ({
+            ...entry,
+            score: Math.round(Number(entry.score) / 10)
+          }));
+          localStorage.setItem(key, JSON.stringify(migrated));
+        });
+        localStorage.setItem(scoreScaleStorageKey, '10-percent');
+      } catch {}
+    }
+
+    migrateHighScoresToReducedScale();
 
     function loadHighScores(mode = 'classic') {
       try {
@@ -2145,7 +2234,7 @@
         level.className = 'score-list__level';
         value.className = 'score-list__value';
         level.textContent = `Level ${entry.level}`;
-        value.textContent = String(entry.score).padStart(4, '0');
+        value.textContent = String(entry.score).padStart(3, '0');
         item.append(level, value);
         list.append(item);
       });
@@ -2154,6 +2243,30 @@
     function renderHighScores() {
       renderScoreList(ui.scoreList, loadHighScores('classic'));
       renderScoreList(ui.timedScoreList, loadHighScores('timed'));
+    }
+
+    function resetScoreConfirmation(button) {
+      clearTimeout(button.resetConfirmationTimer);
+      button.classList.remove('is-confirming');
+      button.textContent = 'Reset';
+    }
+
+    function requestScoreReset(mode, button) {
+      if (!button.classList.contains('is-confirming')) {
+        button.classList.add('is-confirming');
+        button.textContent = 'Confirm';
+        button.resetConfirmationTimer = setTimeout(
+          () => resetScoreConfirmation(button),
+          2600
+        );
+        return;
+      }
+      try {
+        localStorage.removeItem(scoreStorageKeys[mode]);
+      } catch {}
+      resetScoreConfirmation(button);
+      renderHighScores();
+      tone(190, .14, 'sine', .018, -45);
     }
 
     function recordHighScore() {
@@ -2755,7 +2868,7 @@
         target,
         progress: 0,
         duration: target
-          ? 3 + (1 - state.charge) * .5
+          ? 3.2 + (1 - state.charge) * .5
           : 1.12 + (1 - state.charge) * .48,
         curveNormal,
         curveLift: target
@@ -2816,15 +2929,15 @@
         state.levelHits++;
         const levelCleared = state.levelHits >= state.levelQuota;
         updateSceneMetrics();
-        state.score += 100 * state.level;
+        state.score += 10 * state.level;
         if (state.mode === 'timed') {
-          state.timeRemaining += 2;
+          state.timeRemaining += 3;
           state.displayedTime = Math.ceil(state.timeRemaining);
         }
         updateHUD();
         message(
           state.mode === 'timed'
-            ? 'Pattern accepted · 2 seconds added'
+            ? 'Pattern accepted · 3 seconds added'
             : 'Pattern accepted',
           'hit'
         );
@@ -2869,7 +2982,7 @@
 
     function completeLevel() {
       state.transitioning = true;
-      state.score += 250 * state.level;
+      state.score += 25 * state.level;
       updateHUD();
       message(`Level ${state.level} assimilated`, 'hit');
       tone(320, .75, 'sine', .035, 500);
@@ -2973,6 +3086,12 @@
     document.querySelector('#homeButton').addEventListener('click', exitGame);
     document.querySelector('#restartButton').addEventListener('click', resetGame);
     document.querySelector('#exitButton').addEventListener('click', exitGame);
+    ui.classicScoresReset.addEventListener('click', () => {
+      requestScoreReset('classic', ui.classicScoresReset);
+    });
+    ui.timedScoresReset.addEventListener('click', () => {
+      requestScoreReset('timed', ui.timedScoresReset);
+    });
     ui.settingsButton.addEventListener('click', () => setSettingsOpen(!state.settingsOpen));
     ui.settingsClose.addEventListener('click', () => setSettingsOpen(false));
     ui.opticalSetting.addEventListener('change', () => {
@@ -3040,25 +3159,24 @@
       state.stars.position.y = Math.cos(time * .014) * .12;
       wanderGlow.position.x = Math.sin(time * .32) * 3.2 + Math.sin(time * .13) * .7;
       wanderGlow.position.z = Math.cos(time * .27) * 2.25;
-      wanderGlow.material.opacity = .7;
-      redLight.position.x = wanderGlow.position.x;
-      redLight.position.z = wanderGlow.position.z - 1.15;
       fieldSpotlight.position.x = wanderGlow.position.x;
-      fieldSpotlight.position.z = wanderGlow.position.z - 1.15;
+      fieldSpotlight.position.z = wanderGlow.position.z;
       fieldSpotlight.target.position.x = wanderGlow.position.x;
-      fieldSpotlight.target.position.z = wanderGlow.position.z - 1.15;
+      fieldSpotlight.target.position.z = wanderGlow.position.z;
 
       holes.forEach(hole => {
         const distance = Math.hypot(
           hole.group.position.x - wanderGlow.position.x,
           hole.group.position.z - wanderGlow.position.z
         );
-        const proximity = Math.max(0, 1 - distance / 3.25);
+        const proximity = Math.max(0, 1 - distance / 2.05);
         const illumination = proximity * proximity * (3 - 2 * proximity);
         hole.well.material.color.copy(holeDark).lerp(holeLit, illumination);
-        hole.well.material.emissiveIntensity = .55 + illumination * 2.85;
-        hole.halo.scale.setScalar(1);
-        hole.halo.material.opacity = .07 + illumination * .48;
+        hole.well.material.emissive
+          .copy(holeEmissionDark)
+          .lerp(holeEmissionLit, illumination);
+        hole.well.material.emissiveIntensity = .42 + illumination * .8;
+        hole.well.material.opacity = .9 + illumination * .05;
       });
 
       state.targets.forEach(cone => {
@@ -3074,13 +3192,16 @@
               Math.max(.01, eased),
               horizontalGrowth + Math.cos(time * 1.4 + data.seed) * .035 * eased
             );
+            cone.rotation.x = Math.sin(
+              time * .58 + data.seed * 1.27
+            ) * data.aperturePitchMotion;
             cone.rotation.y = Math.sin(time * .65 + data.seed) * .16;
             cone.rotation.z = Math.sin(time * .9 + data.seed) * .035;
           }
           data.mouth.scale.set(1, .82, 1);
         } else {
           data.pulse = Math.max(0, data.pulse - dt * 1.7);
-          if (data.hit) data.retreat = Math.min(1, data.retreat + dt * .62);
+          if (data.hit) data.retreat = Math.min(1, data.retreat + dt * .56);
           applyConeRetreat(cone, data.retreat);
         }
         data.mat.uniforms.time.value = time + data.seed;
