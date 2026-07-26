@@ -1503,18 +1503,29 @@
       const bulgeCenter = .42 + Math.random() * .18;
       const bulgeWidth = .12 + Math.random() * .07;
       const bulgeStrength = Math.random() < .72 ? .025 + Math.random() * .085 : 0;
-      const mouthYawDirection = Math.random() < .5 ? -1 : 1;
-      const mouthYaw = THREE.MathUtils.degToRad(
-        mouthYawDirection * (7 + Math.random() * 16)
+      const apertureYaw = THREE.MathUtils.degToRad(
+        -28 + Math.random() * 56
       );
-      const cameraFacingAmount = Math.random() < .48
-        ? .42 + Math.random() * .34
-        : 0;
-      const cameraFacingNormal = new THREE.Vector3(0, .26, 1).normalize();
+      const apertureElevation = THREE.MathUtils.degToRad(
+        8 + Math.random() * 40
+      );
+      const cameraFacingNormal = new THREE.Vector3(
+        Math.sin(apertureYaw) * Math.cos(apertureElevation),
+        Math.sin(apertureElevation),
+        Math.cos(apertureYaw) * Math.cos(apertureElevation)
+      ).normalize();
+      const cameraFacingAmount = .56 + Math.random() * .3;
+      const mouthRoll = THREE.MathUtils.degToRad(
+        -15 + Math.random() * 30
+      );
       const aperturePitchMotion = THREE.MathUtils.degToRad(
-        cameraFacingAmount
-          ? 2.5 + Math.random() * 3.5
-          : .35 + Math.random() * .65
+        3 + Math.random() * 4
+      );
+      const apertureYawMotion = THREE.MathUtils.degToRad(
+        5 + Math.random() * 4
+      );
+      const apertureRollMotion = THREE.MathUtils.degToRad(
+        3 + Math.random() * 4
       );
       const curvePoint = v => {
         const bend = Math.max(0, (v - bendStart) / bendSpan);
@@ -1556,8 +1567,8 @@
         );
         return orientation.multiply(
           new THREE.Quaternion().setFromAxisAngle(
-            new THREE.Vector3(0, 1, 0),
-            mouthYaw * mouthTurn
+            new THREE.Vector3(0, 0, 1),
+            mouthRoll * mouthTurn
           )
         );
       };
@@ -1639,6 +1650,14 @@
       geo.setIndex(indices);
       geo.computeVertexNormals();
 
+      const lightFromRight = Math.random() < .82;
+      const coneLightDirection = new THREE.Vector3(
+        lightFromRight
+          ? .46 + Math.random() * .18
+          : -.3 - Math.random() * .16,
+        .72 + Math.random() * .14,
+        .34 + Math.random() * .14
+      ).normalize();
       const mat = new THREE.ShaderMaterial({
         transparent: false,
         // The generated tube winds inward; its back faces are the visible exterior.
@@ -1650,8 +1669,9 @@
           straighten: { value: 0 },
           closing: { value: 0 },
           gridPlane: { value: gridPlaneWorld },
-          colorA: { value: new THREE.Color(0x766ee0) },
-          colorB: { value: new THREE.Color(0xe1deff) }
+          lightDirection: { value: coneLightDirection },
+          colorA: { value: new THREE.Color(0x9b85de) },
+          colorB: { value: new THREE.Color(0xeadfff) }
         },
         vertexShader: `
           attribute vec3 straightPosition;
@@ -1682,6 +1702,7 @@
           uniform float time;
           uniform float pulse;
           uniform vec4 gridPlane;
+          uniform vec3 lightDirection;
           uniform vec3 colorA;
           uniform vec3 colorB;
           varying vec2 vUv;
@@ -1715,12 +1736,18 @@
             float broad = noise3(vLocal * 1.7 + vec3(2.3, 5.1, 1.7));
             float detail = noise3(vLocal * 4.1 + vec3(7.4, 1.2, 3.8));
             float splotch = smoothstep(.64, .82, broad * .72 + detail * .28);
-            vec3 lightDir = normalize(vec3(-.35, .72, .6));
-            float diffuse = max(dot(normalize(vNormalView), lightDir), 0.0);
-            float matteLight = .74 + diffuse * .26;
+            vec3 surfaceNormal = normalize(vNormalView);
+            if (!gl_FrontFacing) surfaceNormal = -surfaceNormal;
+            float diffuse = max(
+              dot(surfaceNormal, normalize(lightDirection)),
+              0.0
+            );
+            float matteLight = .24 + diffuse * .84 + pulse * .36;
+            float softHighlight = pow(diffuse, 2.4) * .19;
             vec3 base = mix(colorA, colorB, .2 + vUv.y * .16);
             vec3 color = mix(base, colorB, splotch * .14 + pulse * .58);
-            gl_FragColor = vec4(color * matteLight, 1.0);
+            color = color * matteLight + colorB * softHighlight;
+            gl_FragColor = vec4(color, 1.0);
           }
         `
       });
@@ -1739,7 +1766,10 @@
         endTangent
       );
       bellOrientation.multiply(
-        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), mouthYaw)
+        new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 0, 1),
+          mouthRoll
+        )
       );
       // Invisible anchor preserves mouth orientation and scaling without a visible rim.
       const mouth = new THREE.Group();
@@ -1842,8 +1872,9 @@
           straighten: { value: 0 },
           closing: { value: 0 },
           gridPlane: { value: gridPlaneWorld },
-          mouthColor: { value: new THREE.Color(0x8b85de) },
-          deepColor: { value: new THREE.Color(0x625cb2) }
+          lightDirection: { value: coneLightDirection },
+          mouthColor: { value: new THREE.Color(0xb3a2e5) },
+          deepColor: { value: new THREE.Color(0x7869b2) }
         },
         vertexShader: `
           attribute float pathV;
@@ -1873,6 +1904,7 @@
         fragmentShader: `
           uniform float pulse;
           uniform vec4 gridPlane;
+          uniform vec3 lightDirection;
           uniform vec3 mouthColor;
           uniform vec3 deepColor;
           varying vec2 vUv;
@@ -1883,13 +1915,19 @@
               discard;
             }
             float axialDepth = pow(clamp(vUv.y, 0.0, 1.0), .72);
+            vec3 surfaceNormal = normalize(vNormalView);
+            if (!gl_FrontFacing) surfaceNormal = -surfaceNormal;
+            float diffuse = max(
+              dot(surfaceNormal, normalize(lightDirection)),
+              0.0
+            );
             float wallFacing = abs(dot(
-              normalize(vNormalView),
-              normalize(vec3(-.25, .45, 1.0))
+              surfaceNormal,
+              vec3(0.0, 0.0, 1.0)
             ));
             vec3 color = mix(deepColor, mouthColor, axialDepth);
-            color *= .92 + wallFacing * .08;
-            vec3 entryGlow = vec3(.86, .84, 1.0);
+            color *= .2 + diffuse * .78 + wallFacing * .07 + pulse * .38;
+            vec3 entryGlow = vec3(.94, .88, 1.0);
             color = mix(color, entryGlow, pulse * .46);
             color *= 1.0 + pulse * .18;
             gl_FragColor = vec4(color, 1.0);
@@ -1899,7 +1937,7 @@
       const innerWall = new THREE.Mesh(throatGeo, innerMat);
       throat.add(innerWall);
       group.add(throat);
-      const entryLight = new THREE.PointLight(0xc5c0ff, 0, 3.8, 2);
+      const entryLight = new THREE.PointLight(0xdccaff, 0, 3.8, 2);
       entryLight.position.copy(endPosition);
       group.add(entryLight);
       const uprightMouthQuaternion = new THREE.Quaternion().setFromUnitVectors(
@@ -1911,6 +1949,8 @@
         mat, innerMat, entryLight, mouth, throat, spawn: 0, pulse: 0, hit: false,
         seed: Math.random() * 10,
         aperturePitchMotion,
+        apertureYawMotion,
+        apertureRollMotion,
         tubePoint: curvePoint,
         closedY: closedYAt,
         closedMouthY: closedYAt(1, endPosition.y),
@@ -3195,8 +3235,12 @@
             cone.rotation.x = Math.sin(
               time * .58 + data.seed * 1.27
             ) * data.aperturePitchMotion;
-            cone.rotation.y = Math.sin(time * .65 + data.seed) * .16;
-            cone.rotation.z = Math.sin(time * .9 + data.seed) * .035;
+            cone.rotation.y = Math.sin(
+              time * .65 + data.seed
+            ) * data.apertureYawMotion;
+            cone.rotation.z = Math.sin(
+              time * .79 + data.seed * 1.43
+            ) * data.apertureRollMotion;
           }
           data.mouth.scale.set(1, .82, 1);
         } else {
