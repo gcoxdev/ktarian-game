@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ktarian cone types",
+  "description": "Cone archetypes. See CONE_TYPES.md for units, preview controls, runtime variation and validation behavior. Cross-field height constraints and unique names are checked by the runtime validator.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "coneTypes"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "coneTypes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "S1-R",
+          "S1-H",
+          "S2-R",
+          "S2-H",
+          "S3-R",
+          "S3-ER",
+          "OC",
+          "OR",
+          "OR-Y",
+          "BH",
+          "BA",
+          "BO",
+          "OR-B"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Unique human-readable type name."
+          },
+          "S1-R": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 150,
+            "description": "Bottom radius as a percentage of the standard 0.88-unit mouth radius."
+          },
+          "S1-H": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 96,
+            "description": "First height landmark as a percentage of the full 2.5-unit centerline. Absolute from the base, not a segment length."
+          },
+          "S2-R": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 150,
+            "description": "Radius at S1-H as a percentage of the standard mouth radius."
+          },
+          "S2-H": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 99,
+            "description": "Second absolute height landmark, in percent. Must be at least 1 percentage point above S1-H."
+          },
+          "S3-R": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 150,
+            "description": "Radius at S2-H as a percentage of the standard mouth radius."
+          },
+          "S3-ER": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 4,
+            "description": "Final mouth radius multiplier. 1 is standard, 1.1 is 110 percent. This is not a percentage value."
+          },
+          "OC": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Aperture center offset toward the lower edge of its plane, as a percentage of the final mouth radius."
+          },
+          "OR": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 90,
+            "description": "Mouth tilt in degrees from upright. 0 is upright; 90 faces sideways."
+          },
+          "OR-Y": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90,
+            "description": "Signed mouth heading in degrees. Side columns mirror its magnitude inward; the center column preserves the sign."
+          },
+          "BH": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 95,
+            "description": "Bend pivot height as a percentage of the full centerline. With BA > 0, must be at least 2 percentage points below S2-H."
+          },
+          "BA": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 90,
+            "description": "Maximum additional upper-body bend in degrees. 0 disables bending."
+          },
+          "BO": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180,
+            "description": "Bend heading offset in degrees relative to OR-Y."
+          },
+          "OR-B": {
+            "type": "boolean",
+            "description": "Whether the mouth rotates with the upper-body bend. False preserves the base mouth orientation during bending."
+          }
+        }
+      }
+    }
+  }
+}

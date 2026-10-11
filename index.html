@@ -391,6 +391,21 @@
       pointer-events: none;
     }
 
+    .action-confirm {
+      z-index: 18;
+      background: rgba(3,3,10,.78);
+      transition: none;
+    }
+
+    .panel--confirm {
+      width: min(520px, 100%);
+      padding: clamp(30px, 5vw, 52px);
+    }
+
+    .panel--confirm h1 {
+      font-size: clamp(25px, 5vw, 42px);
+    }
+
     .home-screen {
       position: fixed;
       inset: 0;
@@ -453,6 +468,18 @@
       font-size: clamp(16px, 2vw, 19px);
       line-height: 1.55;
       letter-spacing: .035em;
+    }
+
+    .cone-config-status {
+      margin-top: 12px;
+      color: rgba(169, 255, 196, .72);
+      font: 600 8px/1.4 "Michroma", sans-serif;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .cone-config-status[data-error="true"] {
+      color: #ff9d80;
     }
 
     .high-scores {
@@ -1014,6 +1041,22 @@
       }
     }
 
+    .cone-preview { position: fixed; inset: 0 0 0 auto; width: 310px; padding: 24px; overflow: auto; color: #eeeaff; background: #0b0a19; z-index: 20; }
+    .cone-preview[hidden] { display: none; }
+    .cone-preview h1 { margin: 0 0 8px; font-size: 24px; }
+    .cone-preview p { color: #bbb5d3; line-height: 1.4; }
+    .cone-preview label { display: grid; gap: 6px; margin: 18px 0; }
+    .cone-preview select, .cone-preview input[type="number"], .cone-preview button { width: 100%; padding: 10px; color: #eeeaff; background: #19162e; border: 1px solid #746690; border-radius: 4px; font: inherit; }
+    .cone-preview input[type="checkbox"] { justify-self: start; }
+    .cone-preview input[type="range"] { width: 100%; }
+    .cone-preview a { color: #d3c4ff; }
+    .cone-preview-active #stage { right: 310px; opacity: 1 !important; pointer-events: none; }
+    .cone-preview-active .chrome, .cone-preview-active .home-screen { display: none; }
+    @media (max-width: 720px) {
+      .cone-preview { inset: auto 0 0; width: 100%; height: 310px; padding: 16px; }
+      .cone-preview-active #stage { right: 0; bottom: 310px; }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
     }
@@ -1102,6 +1145,9 @@
           <button class="primary primary--secondary" id="timedButton">Timed mode</button>
         </div>
         <div class="mode-note">Timed mode · start at 90 · hits +3 · misses −5</div>
+        <div class="cone-config-status" id="coneConfigStatus">
+          Loading cone configuration…
+        </div>
         <div class="panel__foot">Mouse / touch · Space to charge · Esc to disengage</div>
       </div>
       <aside class="high-scores" aria-label="Game records">
@@ -1135,6 +1181,25 @@
     </div>
   </section>
 
+  <section
+    class="overlay action-confirm"
+    id="actionConfirm"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="actionConfirmTitle"
+    hidden
+  >
+    <div class="panel panel--confirm">
+      <p class="panel__kicker">Confirm command</p>
+      <h1 id="actionConfirmTitle">Restart game?</h1>
+      <p class="panel__copy" id="actionConfirmCopy">Current progress will be lost.</p>
+      <div class="panel__actions">
+        <button class="primary primary--secondary" id="actionConfirmCancel">Cancel</button>
+        <button class="primary" id="actionConfirmAccept">Restart</button>
+      </div>
+    </div>
+  </section>
+
   <div class="optical-burst" id="opticalBurst" aria-hidden="true">
     <div class="burst-device">
       <div class="burst-face burst-face--front">
@@ -1147,8 +1212,30 @@
   </div>
   <div class="unsupported" id="unsupported">This experience requires a browser with WebGL enabled.</div>
 
+  <aside class="cone-preview" id="conePreview" aria-labelledby="previewTitle" hidden>
+    <h1 id="previewTitle">Cone preview</h1>
+    <p>Compare a repeatable pose, then scrub the full bend.</p>
+    <label>Type <select id="previewType"></select></label>
+    <label>Seed <input id="previewSeed" type="number" min="0" max="4294967295" step="1" value="1"></label>
+    <label><span>Spawn variation</span><input id="previewVariation" type="checkbox"></label>
+    <label>Bend <output id="previewBendOutput">0°</output><input id="previewBend" type="range" min="0" max="100" value="0"></label>
+    <button id="previewMotion" type="button" aria-pressed="false">Play motion</button>
+    <p><button id="previewReload" type="button">Reload cone JSON</button></p>
+    <p id="previewConfigStatus" role="status"></p>
+    <p><a href="./">Back to game</a> · <a href="CONE_TYPES.md">Parameter reference</a></p>
+  </aside>
+
   <script type="module">
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+    import { createTimeline, disposeGameObject, seededRandom } from './game-support.mjs';
+    import { validateConeConfig } from './cone-config.mjs';
+
+    const preview = {
+      active: new URLSearchParams(location.search).get('preview') === 'cones',
+      paused: true,
+      bend: 0
+    };
+    if (preview.active) document.body.classList.add('cone-preview-active');
 
     await document.fonts.load('52px "Ktarian Turbolift Label"');
 
@@ -1163,6 +1250,11 @@
       progressCount: document.querySelector('#progressCount'),
       startOverlay: document.querySelector('#startOverlay'),
       endOverlay: document.querySelector('#endOverlay'),
+      actionConfirm: document.querySelector('#actionConfirm'),
+      actionConfirmTitle: document.querySelector('#actionConfirmTitle'),
+      actionConfirmCopy: document.querySelector('#actionConfirmCopy'),
+      actionConfirmCancel: document.querySelector('#actionConfirmCancel'),
+      actionConfirmAccept: document.querySelector('#actionConfirmAccept'),
       endKicker: document.querySelector('#endKicker'),
       endTitle: document.querySelector('#endTitle'),
       endCopy: document.querySelector('#endCopy'),
@@ -1225,7 +1317,7 @@
     }
 
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    renderer.setSize(innerWidth, innerHeight);
+    renderer.setSize(stage.clientWidth, stage.clientHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
@@ -1260,6 +1352,15 @@
     let boardInLift = false;
 
     function configureCamera() {
+      if (preview.active) {
+        camera.aspect = stage.clientWidth / stage.clientHeight;
+        camera.fov = 40;
+        camera.zoom = 1;
+        camera.position.set(0, 3.1, 6);
+        camera.lookAt(0, .8, -1.15);
+        camera.updateProjectionMatrix();
+        return;
+      }
       const aspect = innerWidth / innerHeight;
       const portraitPhone = innerWidth <= 720 && aspect <= 1;
       const portraitTablet = innerWidth > 720 && innerWidth <= 1024 && aspect <= 1;
@@ -1296,16 +1397,36 @@
       camera.fov = portraitPhone ? 52 : portraitTablet ? 44 : 40;
       camera.position.set(
         0,
-        portraitPhone ? 13.2 : portraitTablet ? 12.2 : 11.2,
-        portraitPhone ? 21.5 : portraitTablet ? 18.5 : 15.8
+        portraitPhone ? 24 : portraitTablet ? 21 : 11.2,
+        portraitPhone ? 20 : portraitTablet ? 19 : 15.8
       );
       camera.lookAt(0, .35, -1.4);
       camera.updateProjectionMatrix();
+      if (portraitPhone || portraitTablet) {
+        // Fit the whole board with a steeper view so touch targets in adjacent
+        // rows remain distinguishable. User zoom is applied after the fit.
+        camera.zoom = 1;
+        camera.updateProjectionMatrix();
+        camera.updateMatrixWorld(true);
+        board.updateMatrixWorld(true);
+        let extentX = 0;
+        let extentY = 0;
+        for (const x of [-4.55, 4.55]) {
+          for (const z of [-3.85, 3.85]) {
+            for (const y of [0, 1.8]) {
+              const p = board.localToWorld(new THREE.Vector3(x, y, z)).project(camera);
+              extentX = Math.max(extentX, Math.abs(p.x));
+              extentY = Math.max(extentY, Math.abs(p.y));
+            }
+          }
+        }
+        camera.zoom = Math.min(.88 / extentX, .55 / extentY) * settings.zoom;
+        camera.updateProjectionMatrix();
+      }
     }
 
-    configureCamera();
-
-    const clock = new THREE.Clock();
+    const clock = createTimeline();
+    let lastFrameTime = performance.now();
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2(0, .2);
     const aimPlane = new THREE.Plane();
@@ -1342,6 +1463,7 @@
     }
 
     applyBoardAngle();
+    configureCamera();
 
     const state = {
       started: false,
@@ -1371,8 +1493,15 @@
       scoreRecorded: false,
       scoreEligible: true,
       settingsOpen: false,
+      confirmationOpen: false,
       liftTransition: null
     };
+
+    function scheduleGame(callback, delay = 0, generation = state.generation) {
+      return clock.schedule(() => {
+        if (generation === state.generation && state.playing) callback();
+      }, delay);
+    }
 
     function syncSettingsUI() {
       ui.opticalSetting.checked = settings.opticalDevice;
@@ -1959,7 +2088,7 @@
     function startLiftTransition(type, { resumeLevel = false } = {}) {
       state.transitioning = true;
       state.charging = false;
-      clearTimeout(messageTimer);
+      clock.cancel(messageTimer);
       ui.message.textContent = type === 'entry'
         ? 'Level 47 · entering turbolift'
         : 'Level 47 complete · exiting turbolift';
@@ -1994,7 +2123,7 @@
         camera.updateProjectionMatrix();
       }
       tone(523, .38, 'sine', .026, 260);
-      setTimeout(() => tone(784, .5, 'sine', .018, -120), 190);
+      scheduleGame(() => tone(784, .5, 'sine', .018, -120), 190);
     }
 
     function finishLiftTransition(type) {
@@ -2157,142 +2286,549 @@
     board.add(wanderGlow);
 
     const coneSpawnDuration = 1.9;
+    const fallbackConeShapeProfiles = [
+      {
+        name: 'Type 1',
+        'S1-R': 10,
+        'S1-H': 40,
+        'S2-R': 20,
+        'S2-H': 85,
+        'S3-R': 40,
+        'S3-ER': 1,
+        OC: 10,
+        OR: 45,
+        'OR-Y': 0,
+        BH: 40,
+        BA: 55,
+        BO: 0,
+        'OR-B': true
+      }
+    ];
+    const coneConfigState = {
+      source: 'embedded fallback',
+      error: null
+    };
+    let lastValidConeProfiles = null;
+    let coneLoadRequest = 0;
+    async function loadConeShapeProfiles() {
+      const request = ++coneLoadRequest;
+      let profiles;
+      let source = 'cone-types.json';
+      let error = null;
+      let warnings = [];
+      const status = document.querySelector('#coneConfigStatus');
+      status.hidden = false;
+      status.textContent = 'Loading cone designs…';
+      try {
+        const response = await fetch(new URL('./cone-types.json', import.meta.url), {
+          cache: 'no-store', signal: AbortSignal.timeout(5000)
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const validated = validateConeConfig(await response.json());
+        profiles = validated.profiles;
+        warnings = validated.errors;
+        if (request === coneLoadRequest) lastValidConeProfiles = profiles;
+      } catch (cause) {
+        error = cause;
+        profiles = lastValidConeProfiles ?? validateConeConfig({ coneTypes: fallbackConeShapeProfiles }).profiles;
+        source = lastValidConeProfiles ? 'last valid configuration' : 'embedded fallback';
+      }
+      if (request === coneLoadRequest) {
+        coneConfigState.source = source;
+        coneConfigState.error = error;
+        status.dataset.error = String(Boolean(error || warnings.length));
+        status.hidden = !error && !warnings.length;
+        status.textContent = error
+          ? 'Cone designs unavailable · using fallback designs'
+          : 'Some cone designs were unavailable · remaining designs loaded';
+        window.ktarianConeConfig = {
+          source, error: error?.message || null, warnings,
+          coneTypes: profiles.map(profile => ({ ...profile }))
+        };
+        const details = [error?.message, ...warnings].filter(Boolean).join(' ');
+        document.querySelector('#previewConfigStatus').textContent =
+          `${profiles.length} types · ${source}${details ? ` · ${details}` : ''}`;
+        if (details) console.warn('Cone configuration:', details);
+      }
+      return profiles;
+    }
+    let coneShapeProfiles = await loadConeShapeProfiles();
 
-    function makeCone() {
+    function makeCone({ spawnX = 0, typeIndex = null, random = Math.random, varyShape = true } = {}) {
       const group = new THREE.Group();
       const segments = 48;
-      const rings = 40;
+      const rings = 64;
       const verts = [];
+      const centerVerts = [];
+      const bentVerts = [];
+      const bentCenterVerts = [];
       const straightVerts = [];
       const closedVerts = [];
       const indices = [];
       const uvs = [];
-      const baseRadius = .09 + Math.random() * .025;
-      const flareScale = .69 + Math.random() * .075;
-      const highTaper = Math.random() < .38;
-      const flareStart = highTaper
-        ? .25 + Math.random() * .11
-        : .055 + Math.random() * .17;
-      const flarePower = 1.32 + Math.random() * .62;
-      const bendStart = .34 + Math.random() * .18;
-      const bendSpan = 1 - bendStart;
-      const bendReach = .92 + Math.random() * .34;
-      const middleForwardBend = Math.random() < .46
-        ? .16 + Math.random() * .2
-        : .025 + Math.random() * .1;
-      const swingPhase = Math.random() * Math.PI * 2;
-      const swingFrequency = 1.25 + Math.random() * .75;
-      const sideSwing = .035 + Math.random() * .13;
-      const depthSwing = .02 + Math.random() * .065;
-      const bulgeCenter = .42 + Math.random() * .18;
-      const bulgeWidth = .12 + Math.random() * .07;
-      const bulgeStrength = Math.random() < .72 ? .025 + Math.random() * .085 : 0;
-      const apertureYaw = THREE.MathUtils.degToRad(
-        -42 + Math.random() * 84
+      // S1-H and S2-H are absolute landmarks measured from the cone bottom.
+      const profileIndex = typeIndex ?? Math.floor(
+        random() * coneShapeProfiles.length
       );
-      const apertureElevation = THREE.MathUtils.degToRad(
-        2 + Math.random() * 56
+      const sourceProfile = coneShapeProfiles[profileIndex];
+      const signedJitter = amount => (
+        varyShape ? (random() * 2 - 1) * amount : 0
       );
-      const cameraFacingNormal = new THREE.Vector3(
-        Math.sin(apertureYaw) * Math.cos(apertureElevation),
-        Math.sin(apertureElevation),
-        Math.cos(apertureYaw) * Math.cos(apertureElevation)
-      ).normalize();
-      const cameraFacingAmount = .74 + Math.random() * .22;
-      const mouthRoll = THREE.MathUtils.degToRad(
-        -24 + Math.random() * 48
+      const variedRadius = value => Math.max(
+        .01,
+        value * (1 + signedJitter(.04))
       );
+      const segment1End = THREE.MathUtils.clamp(
+        sourceProfile.s1h + signedJitter(.015),
+        0,
+        .96
+      );
+      const segment2End = THREE.MathUtils.clamp(
+        sourceProfile.s2h + signedJitter(.015),
+        segment1End + .01,
+        .99
+      );
+      const yawMagnitude = THREE.MathUtils.clamp(
+        Math.abs(sourceProfile.orY) + signedJitter(4),
+        0,
+        90
+      );
+      const yawSign = spawnX < -.01
+        ? 1
+        : spawnX > .01
+          ? -1
+          : Math.sign(sourceProfile.orY || 1);
+      // JSON profiles remain the recognizable archetypes. Each spawn receives
+      // restrained organic variation, and side columns mirror OR-Y inward.
+      const profile = {
+        ...sourceProfile,
+        s1r: variedRadius(sourceProfile.s1r),
+        s1h: segment1End,
+        s2r: variedRadius(sourceProfile.s2r),
+        s2h: segment2End,
+        s3r: variedRadius(sourceProfile.s3r),
+        s3er: THREE.MathUtils.clamp(
+          sourceProfile.s3er * (1 + signedJitter(.035)),
+          .1,
+          4
+        ),
+        oc: THREE.MathUtils.clamp(
+          sourceProfile.oc + signedJitter(.012),
+          0,
+          1
+        ),
+        or: THREE.MathUtils.clamp(
+          sourceProfile.or + signedJitter(3),
+          0,
+          90
+        ),
+        orY: yawMagnitude * yawSign,
+        bh: THREE.MathUtils.clamp(
+          sourceProfile.bh + signedJitter(.02),
+          0,
+          .95
+        ),
+        ba: sourceProfile.ba > 0
+          ? THREE.MathUtils.clamp(
+              sourceProfile.ba + signedJitter(4),
+              0,
+              90
+            )
+          : 0,
+        bo: THREE.MathUtils.clamp(
+          sourceProfile.bo + signedJitter(6),
+          -180,
+          180
+        )
+      };
+      const standardMouthRadius = .88;
+      const mouthRadiusTarget = standardMouthRadius * profile.s3er;
+      const coneHeight = 2.5;
+      const baseRatio = profile.s1r;
+      const segment2StartRatio = profile.s2r;
+      const segment3StartRatio = profile.s3r;
+      const baseRadius = standardMouthRadius * baseRatio;
+      const segment2StartRadius = standardMouthRadius * segment2StartRatio;
+      const segment3StartRadius = standardMouthRadius * segment3StartRatio;
+      const mouthOrientation = THREE.MathUtils.degToRad(profile.or);
+      const mouthYaw = THREE.MathUtils.degToRad(profile.orY);
       const aperturePitchMotion = THREE.MathUtils.degToRad(
-        5 + Math.random() * 5
+        4 + random() * 5
       );
       const apertureYawMotion = THREE.MathUtils.degToRad(
-        8 + Math.random() * 5
+        5.5 + random() * 7.5
       );
       const apertureRollMotion = THREE.MathUtils.degToRad(
-        5 + Math.random() * 5
+        2.2 + random() * 4.3
       );
       const apertureMotionRate = new THREE.Vector3(
-        .42 + Math.random() * .36,
-        .45 + Math.random() * .4,
-        .52 + Math.random() * .48
+        .38 + random() * .32,
+        .34 + random() * .38,
+        .42 + random() * .37
       );
+      // Three cumulative motion zones let the lower stem, taper, and bell
+      // drift independently while the base remains planted in its aperture.
+      const stemMotionStrength = random() < .08
+        ? THREE.MathUtils.lerp(.42, .58, random())
+        : THREE.MathUtils.lerp(.72, 1.12, random());
       const stemMotionRate = new THREE.Vector3(
-        .62 + Math.random() * .68,
-        .68 + Math.random() * .7,
-        .58 + Math.random() * .76
+        .49 + random() * .37,
+        .56 + random() * .44,
+        .44 + random() * .44
       );
       const stemMotionAmplitude = new THREE.Vector3(
-        .055 + Math.random() * .12,
-        .012 + Math.random() * .038,
-        .035 + Math.random() * .13
+        (.039 + random() * .036) * stemMotionStrength,
+        (.058 + random() * .056) * stemMotionStrength,
+        (.08 + random() * .068) * stemMotionStrength
       );
       const stemMotionPhase = new THREE.Vector3(
-        Math.random() * Math.PI * 2,
-        Math.random() * Math.PI * 2,
-        Math.random() * Math.PI * 2
+        random() * Math.PI * 2,
+        random() * Math.PI * 2,
+        random() * Math.PI * 2
       );
-      const curvePoint = v => {
-        const bend = Math.max(0, (v - bendStart) / bendSpan);
-        const bendCurve = bend * bend;
-        const bendCubic = bendCurve * bend;
-        const midEnvelope = Math.pow(Math.max(0, Math.sin(v * Math.PI)), 1.35);
-        const forwardEnvelope = Math.pow(Math.max(0, Math.sin(v * Math.PI)), 2);
-        const forwardDerivative = Math.PI * Math.sin(v * Math.PI * 2);
-        const lateral = Math.sin(v * Math.PI * swingFrequency + swingPhase) * sideSwing * midEnvelope;
-        const depthTwist = Math.cos(v * Math.PI * (swingFrequency + .35) + swingPhase) * depthSwing * midEnvelope;
-        return {
-          x: lateral,
-          y: v * 2.5 - bendCurve * .16,
-          z: bendCurve * bendReach
-            - bendCubic * .25
-            + depthTwist
-            + forwardEnvelope * middleForwardBend,
-          bend,
-          dy: 2.5 - (bend > 0 ? bend * (.32 / bendSpan) : 0),
-          dz: (
-            bend > 0
-              ? (2 * bend * bendReach - .75 * bendCurve) / bendSpan
-              : 0
-          ) + forwardDerivative * middleForwardBend
-        };
-      };
-      const radiusAt = (v, curve) => {
-        const bulgeDistance = (v - bulgeCenter) / bulgeWidth;
-        const midBulge = Math.exp(-bulgeDistance * bulgeDistance) * bulgeStrength;
-        const flareProgress = THREE.MathUtils.clamp(
-          (v - flareStart) / (1 - flareStart),
+      const stemMotionDirection = new THREE.Vector3(
+        random() * Math.PI * 2,
+        random() * Math.PI * 2,
+        random() * Math.PI * 2
+      );
+      const bendProgressAt = v => {
+        if (v <= segment1End) return 0;
+        const progress = THREE.MathUtils.clamp(
+          (v - segment1End) / (1 - segment1End),
           0,
           1
         );
-        return baseRadius
-          + Math.pow(flareProgress, flarePower) * flareScale
-          + Math.pow(curve.bend, 4) * .07
-          + midBulge;
+        return progress * progress * (3 - 2 * progress);
+      };
+      const tangentAt = v => {
+        const angle = mouthOrientation * bendProgressAt(v);
+        return new THREE.Vector3(
+          Math.sin(angle) * Math.sin(mouthYaw),
+          Math.cos(angle),
+          Math.sin(angle) * Math.cos(mouthYaw)
+        ).normalize();
+      };
+      const segment3ProgressAt = v => THREE.MathUtils.clamp(
+        (v - segment2End) / (1 - segment2End),
+        0,
+        1
+      );
+      const apertureOffsetWeightAt = v => {
+        const progress = segment3ProgressAt(v);
+        return progress * progress * (3 - 2 * progress);
+      };
+      const finalMouthOrientation = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 0, 1),
+        tangentAt(1)
+      );
+      // OC moves the center of the S3-ER circle toward the lower edge of the
+      // aperture plane. S3-R remains on the original tube axis.
+      const apertureCenterOffset = new THREE.Vector3(
+        0,
+        -mouthRadiusTarget * profile.oc,
+        0
+      ).applyQuaternion(finalMouthOrientation);
+      // Integrate the configured orientation into the actual tube centerline.
+      // S2 begins the bend and S3 carries it through to the mouth, preventing a
+      // rotated bell from folding back through a still-vertical middle segment.
+      const centerlineSteps = 160;
+      const centerlinePoints = [new THREE.Vector3(0, 0, 0)];
+      for (let i = 1; i <= centerlineSteps; i++) {
+        const midpoint = (i - .5) / centerlineSteps;
+        centerlinePoints.push(
+          centerlinePoints[i - 1].clone().addScaledVector(
+            tangentAt(midpoint),
+            coneHeight / centerlineSteps
+          )
+        );
+      }
+      const curvePoint = v => {
+        const sample = THREE.MathUtils.clamp(v, 0, 1) * centerlineSteps;
+        const lowerIndex = Math.min(
+          centerlineSteps - 1,
+          Math.floor(sample)
+        );
+        const blend = sample - lowerIndex;
+        const position = centerlinePoints[lowerIndex].clone().lerp(
+          centerlinePoints[lowerIndex + 1],
+          blend
+        );
+        position.addScaledVector(
+          apertureCenterOffset,
+          apertureOffsetWeightAt(v)
+        );
+        // OC shears the S3 loft between two offset circle centers. It must not
+        // rotate the rings toward that lateral displacement; OR and OR-Y alone
+        // define their facing direction.
+        const tangent = tangentAt(v).multiplyScalar(coneHeight);
+        return {
+          x: position.x,
+          y: position.y,
+          z: position.z,
+          bend: bendProgressAt(v),
+          dx: tangent.x,
+          dy: tangent.y,
+          dz: tangent.z
+        };
+      };
+      const radiusKnots = segment1End > .0001
+        ? [
+            { v: 0, radius: baseRadius },
+            { v: segment1End, radius: segment2StartRadius },
+            { v: segment2End, radius: segment3StartRadius },
+            { v: 1, radius: mouthRadiusTarget }
+          ]
+        : [
+            { v: 0, radius: segment2StartRadius },
+            { v: segment2End, radius: segment3StartRadius },
+            { v: 1, radius: mouthRadiusTarget }
+          ];
+      const radiusSlopes = [];
+      for (let i = 0; i < radiusKnots.length - 1; i++) {
+        radiusSlopes.push(
+          (
+            radiusKnots[i + 1].radius - radiusKnots[i].radius
+          ) / (
+            radiusKnots[i + 1].v - radiusKnots[i].v
+          )
+        );
+      }
+      const radiusTangents = radiusKnots.map((_, index) => {
+        if (index === 0) return radiusSlopes[0];
+        if (index === radiusKnots.length - 1) {
+          return radiusSlopes[radiusSlopes.length - 1];
+        }
+        const previousSlope = radiusSlopes[index - 1];
+        const nextSlope = radiusSlopes[index];
+        if (previousSlope * nextSlope <= 0) return 0;
+        const previousSpan = (
+          radiusKnots[index].v - radiusKnots[index - 1].v
+        );
+        const nextSpan = (
+          radiusKnots[index + 1].v - radiusKnots[index].v
+        );
+        const weight1 = 2 * nextSpan + previousSpan;
+        const weight2 = nextSpan + 2 * previousSpan;
+        return (
+          (weight1 + weight2)
+          / (weight1 / previousSlope + weight2 / nextSlope)
+        );
+      });
+      const radiusAt = v => {
+        const clampedV = THREE.MathUtils.clamp(v, 0, 1);
+        let index = radiusKnots.length - 2;
+        for (let i = 0; i < radiusKnots.length - 1; i++) {
+          if (clampedV <= radiusKnots[i + 1].v) {
+            index = i;
+            break;
+          }
+        }
+        const start = radiusKnots[index];
+        const end = radiusKnots[index + 1];
+        const span = end.v - start.v;
+        const progress = (clampedV - start.v) / span;
+        const progress2 = progress * progress;
+        const progress3 = progress2 * progress;
+        return (
+          (2 * progress3 - 3 * progress2 + 1) * start.radius
+          + (progress3 - 2 * progress2 + progress)
+            * span * radiusTangents[index]
+          + (-2 * progress3 + 3 * progress2) * end.radius
+          + (progress3 - progress2)
+            * span * radiusTangents[index + 1]
+        );
       };
       const orientationAt = (v, curve) => {
-        const mouthTurnRaw = Math.min(1, Math.max(0, (v - .58) / .42));
-        const mouthTurn = mouthTurnRaw * mouthTurnRaw * (3 - 2 * mouthTurnRaw);
-        const apertureNormal = new THREE.Vector3(0, curve.dy, curve.dz)
-          .normalize()
-          .lerp(
-            cameraFacingNormal,
-            cameraFacingAmount * mouthTurn
-          )
-          .normalize();
-        const orientation = new THREE.Quaternion().setFromUnitVectors(
+        const apertureNormal = new THREE.Vector3(
+          curve.dx,
+          curve.dy,
+          curve.dz
+        ).normalize();
+        return new THREE.Quaternion().setFromUnitVectors(
           new THREE.Vector3(0, 0, 1),
           apertureNormal
         );
-        return orientation.multiply(
-          new THREE.Quaternion().setFromAxisAngle(
-            new THREE.Vector3(0, 0, 1),
-            mouthRoll * mouthTurn
+      };
+      const mouthRadius = radiusAt(1);
+      const end = curvePoint(1);
+      const bendStartV = Math.min(profile.bh, segment2End - .02);
+      const bendPivotCurve = curvePoint(bendStartV);
+      const topBendPivot = new THREE.Vector3(
+        bendPivotCurve.x,
+        bendPivotCurve.y,
+        bendPivotCurve.z
+      );
+      const configuredBendAngle = THREE.MathUtils.degToRad(profile.ba);
+      const bendHeading = THREE.MathUtils.degToRad(
+        profile.orY + profile.bo
+      );
+      const topBendAxis = new THREE.Vector3(
+        Math.cos(bendHeading),
+        0,
+        -Math.sin(bendHeading)
+      ).normalize();
+      const baseEndPosition = new THREE.Vector3(end.x, end.y, end.z);
+      const bentEndPosition = baseEndPosition.clone()
+        .sub(topBendPivot)
+        .applyAxisAngle(topBendAxis, configuredBendAngle)
+        .add(topBendPivot);
+      const bendStartTangent = new THREE.Vector3(
+        bendPivotCurve.dx,
+        bendPivotCurve.dy,
+        bendPivotCurve.dz
+      ).normalize();
+      const bendEndTangent = new THREE.Vector3(
+        end.dx,
+        end.dy,
+        end.dz
+      ).normalize();
+      if (profile.orB) {
+        bendEndTangent.applyAxisAngle(
+          topBendAxis,
+          configuredBendAngle
+        );
+      }
+      let finalSegmentLength = 0;
+      let previousFinalSegmentPoint = curvePoint(segment2End);
+      for (let sample = 1; sample <= 24; sample++) {
+        const sampleV = THREE.MathUtils.lerp(
+          segment2End,
+          1,
+          sample / 24
+        );
+        const sampleCurve = curvePoint(sampleV);
+        const samplePoint = new THREE.Vector3(
+          sampleCurve.x,
+          sampleCurve.y,
+          sampleCurve.z
+        );
+        finalSegmentLength += samplePoint.distanceTo(
+          new THREE.Vector3(
+            previousFinalSegmentPoint.x,
+            previousFinalSegmentPoint.y,
+            previousFinalSegmentPoint.z
           )
         );
+        previousFinalSegmentPoint = sampleCurve;
+      }
+      // S3-R begins a straight final segment whose axis is exactly OR. The
+      // bend curve ends here instead of continuing to twist up to the lip.
+      const bentFinalSegmentStart = bentEndPosition.clone()
+        .addScaledVector(bendEndTangent, -finalSegmentLength);
+      const bendControlLength = (
+        topBendPivot.distanceTo(bentFinalSegmentStart) * .38
+      );
+      const bendControl1 = topBendPivot.clone()
+        .addScaledVector(bendStartTangent, bendControlLength);
+      const bendControl2 = bentFinalSegmentStart.clone()
+        .addScaledVector(bendEndTangent, -bendControlLength);
+      const bentCurvePoint = v => {
+        if (v <= bendStartV || configuredBendAngle < .0001) {
+          return curvePoint(v);
+        }
+        if (v >= segment2End) {
+          const finalProgress = THREE.MathUtils.clamp(
+            (v - segment2End) / (1 - segment2End),
+            0,
+            1
+          );
+          const position = bentFinalSegmentStart.clone().lerp(
+            bentEndPosition,
+            finalProgress
+          );
+          return {
+            x: position.x,
+            y: position.y,
+            z: position.z,
+            dx: bendEndTangent.x,
+            dy: bendEndTangent.y,
+            dz: bendEndTangent.z
+          };
+        }
+        const t = THREE.MathUtils.clamp(
+          (v - bendStartV) / (segment2End - bendStartV),
+          0,
+          1
+        );
+        const oneMinusT = 1 - t;
+        const position = topBendPivot.clone()
+          .multiplyScalar(oneMinusT ** 3)
+          .addScaledVector(
+            bendControl1,
+            3 * oneMinusT * oneMinusT * t
+          )
+          .addScaledVector(
+            bendControl2,
+            3 * oneMinusT * t * t
+          )
+          .addScaledVector(bentFinalSegmentStart, t ** 3);
+        const tangent = bendControl1.clone()
+          .sub(topBendPivot)
+          .multiplyScalar(3 * oneMinusT * oneMinusT)
+          .add(
+            bendControl2.clone()
+              .sub(bendControl1)
+              .multiplyScalar(6 * oneMinusT * t)
+          )
+          .add(
+            bentFinalSegmentStart.clone()
+              .sub(bendControl2)
+              .multiplyScalar(3 * t * t)
+          );
+        return {
+          x: position.x,
+          y: position.y,
+          z: position.z,
+          dx: tangent.x,
+          dy: tangent.y,
+          dz: tangent.z
+        };
       };
-      const mouthRadius = radiusAt(1, curvePoint(1));
-      const closureRisePower = 3.45 + Math.random() * 2.05;
-      const closureFallPower = 1.35 + Math.random() * 1.05;
+      // Ring planes always follow the constructed centerline. For OR-B false,
+      // the cubic's unrotated final tangent preserves OR at the aperture while
+      // giving the preceding segment a continuous approach.
+      const bentOrientationAt = (v, curve) => orientationAt(v, curve);
+      const bentEndCurve = bentCurvePoint(1);
+      const bentApertureCenter = new THREE.Vector3(
+        bentEndCurve.x,
+        bentEndCurve.y,
+        bentEndCurve.z
+      );
+      const bentApertureNormal = new THREE.Vector3(0, 0, 1)
+        .applyQuaternion(bentOrientationAt(1, bentEndCurve))
+        .normalize();
+      const keepBehindBentAperturePlane = (point, pathV) => {
+        if (pathV < segment2End) return point;
+        const excess = point.clone()
+          .sub(bentApertureCenter)
+          .dot(bentApertureNormal);
+        if (excess > 0) {
+          point.addScaledVector(bentApertureNormal, -excess);
+        }
+        return point;
+      };
+      const aperturePlaneCenter = new THREE.Vector3(
+        end.x,
+        end.y,
+        end.z
+      );
+      const aperturePlaneNormal = new THREE.Vector3(
+        end.dx,
+        end.dy,
+        end.dz
+      ).normalize();
+      const keepBehindAperturePlane = (point, pathV) => {
+        if (pathV < segment2End) return point;
+        const excess = point.clone()
+          .sub(aperturePlaneCenter)
+          .dot(aperturePlaneNormal);
+        if (excess > 0) {
+          point.addScaledVector(aperturePlaneNormal, -excess);
+        }
+        return point;
+      };
+      const closureRisePower = 3.45 + random() * 2.05;
+      const closureFallPower = 1.35 + random() * 1.05;
       const closurePeak = closureRisePower / (
         closureRisePower + closureFallPower
       );
@@ -2300,8 +2836,8 @@
         Math.pow(closurePeak, closureRisePower)
         * Math.pow(1 - closurePeak, closureFallPower)
       );
-      const closureBulbStrength = .27 + Math.random() * .065;
-      const closureLipSupport = .072 + Math.random() * .042;
+      const closureBulbStrength = .27 + random() * .065;
+      const closureLipSupport = .072 + random() * .042;
       const closedRadiusAt = v => {
         const shaft = .055 + THREE.MathUtils.smoothstep(v, .05, .72) * .085;
         const bulbProgress = THREE.MathUtils.clamp((v - .45) / .55, 0, 1);
@@ -2331,26 +2867,59 @@
       for (let j = 0; j <= rings; j++) {
         const v = j / rings;
         const curve = curvePoint(v);
-        const radius = radiusAt(v, curve);
-        const sideScale = 1 - Math.pow(curve.bend, 2) * .18;
+        const radius = radiusAt(v);
         const ringOrientation = orientationAt(v, curve);
+        const bentCurve = bentCurvePoint(v);
+        const bentRingOrientation = bentOrientationAt(v, bentCurve);
         for (let i = 0; i <= segments; i++) {
           const u = i / segments;
           const angle = u * Math.PI * 2;
           const radial = new THREE.Vector3(
             Math.cos(angle) * radius,
-            Math.sin(angle) * radius * sideScale,
+            Math.sin(angle) * radius,
             0
           ).applyQuaternion(ringOrientation);
+          const bentRadial = new THREE.Vector3(
+            Math.cos(angle) * radius,
+            Math.sin(angle) * radius,
+            0
+          ).applyQuaternion(bentRingOrientation);
+          const surfacePoint = keepBehindAperturePlane(
+            new THREE.Vector3(
+              curve.x + radial.x,
+              curve.y + radial.y,
+              curve.z + radial.z
+            ),
+            v
+          );
           verts.push(
-            curve.x + radial.x,
-            curve.y + radial.y,
-            curve.z + radial.z
+            surfacePoint.x,
+            surfacePoint.y,
+            surfacePoint.z
+          );
+          centerVerts.push(curve.x, curve.y, curve.z);
+          const bentSurfacePoint = keepBehindBentAperturePlane(
+            new THREE.Vector3(
+              bentCurve.x + bentRadial.x,
+              bentCurve.y + bentRadial.y,
+              bentCurve.z + bentRadial.z
+            ),
+            v
+          );
+          bentVerts.push(
+            bentSurfacePoint.x,
+            bentSurfacePoint.y,
+            bentSurfacePoint.z
+          );
+          bentCenterVerts.push(
+            bentCurve.x,
+            bentCurve.y,
+            bentCurve.z
           );
           straightVerts.push(
             Math.cos(angle) * radius,
-            curve.y,
-            -Math.sin(angle) * radius * sideScale
+            v * coneHeight,
+            -Math.sin(angle) * radius
           );
           const closedRadius = closedRadiusAt(v);
           closedVerts.push(
@@ -2371,6 +2940,18 @@
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
       geo.setAttribute(
+        'centerPosition',
+        new THREE.Float32BufferAttribute(centerVerts, 3)
+      );
+      geo.setAttribute(
+        'bentPosition',
+        new THREE.Float32BufferAttribute(bentVerts, 3)
+      );
+      geo.setAttribute(
+        'bentCenterPosition',
+        new THREE.Float32BufferAttribute(bentCenterVerts, 3)
+      );
+      geo.setAttribute(
         'straightPosition',
         new THREE.Float32BufferAttribute(straightVerts, 3)
       );
@@ -2381,20 +2962,32 @@
       geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
       geo.setIndex(indices);
       geo.computeVertexNormals();
+      const bentNormalGeo = new THREE.BufferGeometry();
+      bentNormalGeo.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(bentVerts, 3)
+      );
+      bentNormalGeo.setIndex(indices);
+      bentNormalGeo.computeVertexNormals();
+      geo.setAttribute(
+        'bentNormal',
+        bentNormalGeo.getAttribute('normal').clone()
+      );
+      bentNormalGeo.dispose();
 
-      const lightFromRight = Math.random() < .82;
+      const lightFromRight = random() < .82;
       const coneLightDirection = new THREE.Vector3(
         lightFromRight
-          ? .46 + Math.random() * .18
-          : -.3 - Math.random() * .16,
-        .72 + Math.random() * .14,
-        .34 + Math.random() * .14
+          ? .46 + random() * .18
+          : -.3 - random() * .16,
+        .72 + random() * .14,
+        .34 + random() * .14
       ).normalize();
       const mat = new THREE.ShaderMaterial({
         transparent: false,
-        // The generated tube winds inward; its back faces are the visible exterior.
-        // The separate throat mesh owns everything visible through the aperture.
-        side: THREE.BackSide,
+        // Hinge deformation can reverse local winding, so keep both shell sides
+        // available while the inset throat owns the aperture depth.
+        side: THREE.DoubleSide,
         uniforms: {
           time: { value: 0 },
           pulse: { value: 0 },
@@ -2405,39 +2998,86 @@
           motionRate: { value: stemMotionRate },
           motionAmplitude: { value: stemMotionAmplitude },
           motionPhase: { value: stemMotionPhase },
+          motionDirection: { value: stemMotionDirection },
+          topBend: { value: 0 },
+          maxBend: { value: configuredBendAngle },
+          topBendAxis: { value: new THREE.Vector3(1, 0, 0) },
+          bendPivot: { value: topBendPivot },
+          bendHeight: { value: profile.bh },
+          bendAffectsOrientation: { value: profile.orB ? 1 : 0 },
+          apertureExpansion: { value: 0 },
           colorA: { value: new THREE.Color(0x9b85de) },
           colorB: { value: new THREE.Color(0xeadfff) }
         },
         vertexShader: `
           attribute vec3 straightPosition;
           attribute vec3 closedPosition;
+          attribute vec3 centerPosition;
+          attribute vec3 bentPosition;
+          attribute vec3 bentCenterPosition;
+          attribute vec3 bentNormal;
           uniform float time;
           uniform float straighten;
           uniform float closing;
+          uniform float topBend;
+          uniform float maxBend;
+          uniform vec3 topBendAxis;
+          uniform vec3 bendPivot;
+          uniform float bendHeight;
+          uniform float bendAffectsOrientation;
+          uniform float apertureExpansion;
           uniform vec3 motionRate;
           uniform vec3 motionAmplitude;
           uniform vec3 motionPhase;
+          uniform vec3 motionDirection;
           varying vec2 vUv;
           varying vec3 vNormalView;
           varying vec3 vLocal;
           varying vec3 vWorldPosition;
           void main() {
             vUv = uv;
-            vec3 p = position;
-            float anchored = sin(uv.y * 3.14159265);
-            float sway = sin(
-              time * 1.5 * motionRate.x + motionPhase.x + uv.y * 5.0
-            ) * motionAmplitude.x * anchored;
-            p.x += sway + sin(
-              time * 2.1 * motionRate.y + motionPhase.y + uv.y * 8.0
-            ) * motionAmplitude.y * anchored;
-            p.z += cos(
-              time * 1.25 * motionRate.z + motionPhase.z + uv.y * 6.0
-            ) * motionAmplitude.z * anchored;
+            float bendMix = maxBend > .0001
+              ? clamp(topBend / maxBend, 0.0, 1.0)
+              : 0.0;
+            vec3 p = mix(position, bentPosition, bendMix);
+            vec3 activeCenter = mix(
+              centerPosition,
+              bentCenterPosition,
+              bendMix
+            );
+            float apertureWeight = smoothstep(.68, 1.0, uv.y);
+            p += (
+              p - activeCenter
+            ) * apertureExpansion * apertureWeight;
+            float lowerMotion = sin(
+              time * motionRate.x + motionPhase.x
+            ) * motionAmplitude.x * smoothstep(.06, .42, uv.y);
+            float middleMotion = sin(
+              time * motionRate.y + motionPhase.y
+            ) * motionAmplitude.y * smoothstep(.32, .72, uv.y);
+            float upperMotion = sin(
+              time * motionRate.z + motionPhase.z
+            ) * motionAmplitude.z * smoothstep(.66, 1.0, uv.y);
+            float motionVisibility = 1.0 - closing;
+            p.x += (
+              lowerMotion * cos(motionDirection.x)
+              + middleMotion * cos(motionDirection.y)
+              + upperMotion * cos(motionDirection.z)
+            ) * motionVisibility;
+            p.z += (
+              lowerMotion * sin(motionDirection.x)
+              + middleMotion * sin(motionDirection.y)
+              + upperMotion * sin(motionDirection.z)
+            ) * motionVisibility;
             p = mix(p, straightPosition, straighten);
             p += (closedPosition - straightPosition) * closing;
             vLocal = p;
-            vNormalView = normalize(normalMatrix * normal);
+            vec3 activeNormal = normalize(mix(
+              normal,
+              bentNormal,
+              bendMix
+            ));
+            vNormalView = normalize(normalMatrix * activeNormal);
             vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
             gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
           }
@@ -2481,11 +3121,10 @@
             float detail = noise3(vLocal * 4.1 + vec3(7.4, 1.2, 3.8));
             float splotch = smoothstep(.64, .82, broad * .72 + detail * .28);
             vec3 surfaceNormal = normalize(vNormalView);
-            if (!gl_FrontFacing) surfaceNormal = -surfaceNormal;
-            float diffuse = max(
-              dot(surfaceNormal, normalize(lightDirection)),
-              0.0
-            );
+            float diffuse = abs(dot(
+              surfaceNormal,
+              normalize(lightDirection)
+            ));
             float matteLight = .24 + diffuse * .84 + pulse * .36;
             float softHighlight = pow(diffuse, 2.4) * .19;
             vec3 base = mix(colorA, colorB, .2 + vUv.y * .16);
@@ -2499,22 +3138,8 @@
       body.castShadow = true;
       group.add(body);
 
-      const end = curvePoint(1);
-      const endTangent = new THREE.Vector3(0, end.dy, end.dz)
-        .normalize()
-        .lerp(cameraFacingNormal, cameraFacingAmount)
-        .normalize();
       const endPosition = new THREE.Vector3(end.x, end.y, end.z);
-      const bellOrientation = new THREE.Quaternion().setFromUnitVectors(
-        new THREE.Vector3(0, 0, 1),
-        endTangent
-      );
-      bellOrientation.multiply(
-        new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(0, 0, 1),
-          mouthRoll
-        )
-      );
+      const bellOrientation = orientationAt(1, end);
       // Invisible anchor preserves mouth orientation and scaling without a visible rim.
       const mouth = new THREE.Group();
       mouth.position.copy(endPosition);
@@ -2523,60 +3148,124 @@
       group.add(mouth);
 
       const throat = new THREE.Group();
-      const throatRings = 28;
-      const throatEndV = .52;
+      const throatRings = 64;
+      const throatEndV = .025;
+      const wallThickness = (
+        mouthRadius * Math.min(.0225, baseRatio * .45)
+      );
+      const throatRows = [];
       const throatVerts = [];
+      const throatCenterVerts = [];
+      const throatBentVerts = [];
+      const throatBentCenterVerts = [];
       const throatStraightVerts = [];
       const throatClosedVerts = [];
       const throatIndices = [];
       const throatUvs = [];
       const throatPathValues = [];
-      for (let j = 0; j <= throatRings; j++) {
+
+      // The first two rows form the thin aperture lip. Every remaining row
+      // follows the outer profile at one fixed inset, producing a true hollow
+      // tube instead of a second funnel tapering toward a visible point.
+      throatRows.push({
+        v: 1,
+        radius: mouthRadius,
+        depth: 1,
+        outerLip: true
+      });
+      throatRows.push({
+        v: 1,
+        radius: Math.max(.004, mouthRadius - wallThickness),
+        depth: 1,
+        outerLip: false
+      });
+      for (let j = 1; j <= throatRings; j++) {
         const t = j / throatRings;
         const v = THREE.MathUtils.lerp(1, throatEndV, t);
         const curve = curvePoint(v);
-        const outerRadius = radiusAt(v, curve);
-        const edgeCoverage = THREE.MathUtils.lerp(
-          1.06,
-          .78,
-          THREE.MathUtils.smoothstep(t, 0, .22)
-        );
-        const taper = 1 - THREE.MathUtils.smoothstep(t, .04, 1);
-        const radius = Math.max(.006, outerRadius * edgeCoverage * taper);
-        const sideScale = 1 - Math.pow(curve.bend, 2) * .18;
+        const outerRadius = radiusAt(v);
+        throatRows.push({
+          v,
+          radius: Math.max(.004, outerRadius - wallThickness),
+          depth: 1 - t,
+          outerLip: false
+        });
+      }
+
+      throatRows.forEach(row => {
+        const { v, radius } = row;
+        const curve = curvePoint(v);
         const ringOrientation = orientationAt(v, curve);
+        const bentCurve = bentCurvePoint(v);
+        const bentRingOrientation = bentOrientationAt(v, bentCurve);
         for (let i = 0; i <= segments; i++) {
           const u = i / segments;
           const angle = u * Math.PI * 2;
           const radial = new THREE.Vector3(
             Math.cos(angle) * radius,
-            Math.sin(angle) * radius * sideScale,
+            Math.sin(angle) * radius,
             0
           ).applyQuaternion(ringOrientation);
+          const bentRadial = new THREE.Vector3(
+            Math.cos(angle) * radius,
+            Math.sin(angle) * radius,
+            0
+          ).applyQuaternion(bentRingOrientation);
+          const throatPoint = keepBehindAperturePlane(
+            new THREE.Vector3(
+              curve.x + radial.x,
+              curve.y + radial.y,
+              curve.z + radial.z
+            ),
+            v
+          );
           throatVerts.push(
-            curve.x + radial.x,
-            curve.y + radial.y,
-            curve.z + radial.z
+            throatPoint.x,
+            throatPoint.y,
+            throatPoint.z
+          );
+          throatCenterVerts.push(
+            curve.x,
+            curve.y,
+            curve.z
+          );
+          const bentThroatPoint = keepBehindBentAperturePlane(
+            new THREE.Vector3(
+              bentCurve.x + bentRadial.x,
+              bentCurve.y + bentRadial.y,
+              bentCurve.z + bentRadial.z
+            ),
+            v
+          );
+          throatBentVerts.push(
+            bentThroatPoint.x,
+            bentThroatPoint.y,
+            bentThroatPoint.z
+          );
+          throatBentCenterVerts.push(
+            bentCurve.x,
+            bentCurve.y,
+            bentCurve.z
           );
           throatStraightVerts.push(
             Math.cos(angle) * radius,
-            curve.y,
-            -Math.sin(angle) * radius * sideScale
+            v * coneHeight,
+            -Math.sin(angle) * radius
           );
-          const closedRadius = Math.max(
-            .006,
-            closedRadiusAt(v) * edgeCoverage * taper
-          );
+          const closedOuterRadius = closedRadiusAt(v);
+          const closedRadius = row.outerLip
+            ? closedOuterRadius
+            : Math.max(.006, closedOuterRadius - wallThickness);
           throatClosedVerts.push(
             Math.cos(angle) * closedRadius,
             closedYAt(v, curve.y),
             -Math.sin(angle) * closedRadius
           );
-          throatUvs.push(u, 1 - t);
+          throatUvs.push(u, row.depth);
           throatPathValues.push(v);
         }
-      }
-      for (let j = 0; j < throatRings; j++) {
+      });
+      for (let j = 0; j < throatRows.length - 1; j++) {
         for (let i = 0; i < segments; i++) {
           const a = j * (segments + 1) + i;
           const b = a + segments + 1;
@@ -2587,6 +3276,18 @@
       throatGeo.setAttribute(
         'position',
         new THREE.Float32BufferAttribute(throatVerts, 3)
+      );
+      throatGeo.setAttribute(
+        'centerPosition',
+        new THREE.Float32BufferAttribute(throatCenterVerts, 3)
+      );
+      throatGeo.setAttribute(
+        'bentPosition',
+        new THREE.Float32BufferAttribute(throatBentVerts, 3)
+      );
+      throatGeo.setAttribute(
+        'bentCenterPosition',
+        new THREE.Float32BufferAttribute(throatBentCenterVerts, 3)
       );
       throatGeo.setAttribute(
         'straightPosition',
@@ -2606,6 +3307,18 @@
       );
       throatGeo.setIndex(throatIndices);
       throatGeo.computeVertexNormals();
+      const throatBentNormalGeo = new THREE.BufferGeometry();
+      throatBentNormalGeo.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(throatBentVerts, 3)
+      );
+      throatBentNormalGeo.setIndex(throatIndices);
+      throatBentNormalGeo.computeVertexNormals();
+      throatGeo.setAttribute(
+        'bentNormal',
+        throatBentNormalGeo.getAttribute('normal').clone()
+      );
+      throatBentNormalGeo.dispose();
       const innerMat = new THREE.ShaderMaterial({
         side: THREE.DoubleSide,
         depthTest: true,
@@ -2620,6 +3333,14 @@
           motionRate: { value: stemMotionRate },
           motionAmplitude: { value: stemMotionAmplitude },
           motionPhase: { value: stemMotionPhase },
+          motionDirection: { value: stemMotionDirection },
+          topBend: { value: 0 },
+          maxBend: { value: configuredBendAngle },
+          topBendAxis: { value: new THREE.Vector3(1, 0, 0) },
+          bendPivot: { value: topBendPivot },
+          bendHeight: { value: profile.bh },
+          bendAffectsOrientation: { value: profile.orB ? 1 : 0 },
+          apertureExpansion: { value: 0 },
           mouthColor: { value: new THREE.Color(0xb3a2e5) },
           deepColor: { value: new THREE.Color(0x7869b2) }
         },
@@ -2627,32 +3348,70 @@
           attribute float pathV;
           attribute vec3 straightPosition;
           attribute vec3 closedPosition;
+          attribute vec3 centerPosition;
+          attribute vec3 bentPosition;
+          attribute vec3 bentCenterPosition;
+          attribute vec3 bentNormal;
           uniform float time;
           uniform float straighten;
           uniform float closing;
+          uniform float topBend;
+          uniform float maxBend;
+          uniform vec3 topBendAxis;
+          uniform vec3 bendPivot;
+          uniform float bendHeight;
+          uniform float bendAffectsOrientation;
+          uniform float apertureExpansion;
           uniform vec3 motionRate;
           uniform vec3 motionAmplitude;
           uniform vec3 motionPhase;
+          uniform vec3 motionDirection;
           varying vec2 vUv;
           varying vec3 vNormalView;
           varying vec3 vWorldPosition;
           void main() {
             vUv = uv;
-            vec3 p = position;
-            float anchored = sin(pathV * 3.14159265);
-            float sway = sin(
-              time * 1.5 * motionRate.x + motionPhase.x + pathV * 5.0
-            ) * motionAmplitude.x * anchored;
-            p.x += sway
-              + sin(
-                time * 2.1 * motionRate.y + motionPhase.y + pathV * 8.0
-              ) * motionAmplitude.y * anchored;
-            p.z += cos(
-              time * 1.25 * motionRate.z + motionPhase.z + pathV * 6.0
-            ) * motionAmplitude.z * anchored;
+            float bendMix = maxBend > .0001
+              ? clamp(topBend / maxBend, 0.0, 1.0)
+              : 0.0;
+            vec3 p = mix(position, bentPosition, bendMix);
+            vec3 activeCenter = mix(
+              centerPosition,
+              bentCenterPosition,
+              bendMix
+            );
+            float apertureWeight = smoothstep(.68, 1.0, pathV);
+            p += (
+              p - activeCenter
+            ) * apertureExpansion * apertureWeight;
+            float lowerMotion = sin(
+              time * motionRate.x + motionPhase.x
+            ) * motionAmplitude.x * smoothstep(.06, .42, pathV);
+            float middleMotion = sin(
+              time * motionRate.y + motionPhase.y
+            ) * motionAmplitude.y * smoothstep(.32, .72, pathV);
+            float upperMotion = sin(
+              time * motionRate.z + motionPhase.z
+            ) * motionAmplitude.z * smoothstep(.66, 1.0, pathV);
+            float motionVisibility = 1.0 - closing;
+            p.x += (
+              lowerMotion * cos(motionDirection.x)
+              + middleMotion * cos(motionDirection.y)
+              + upperMotion * cos(motionDirection.z)
+            ) * motionVisibility;
+            p.z += (
+              lowerMotion * sin(motionDirection.x)
+              + middleMotion * sin(motionDirection.y)
+              + upperMotion * sin(motionDirection.z)
+            ) * motionVisibility;
             p = mix(p, straightPosition, straighten);
             p += (closedPosition - straightPosition) * closing;
-            vNormalView = normalize(normalMatrix * normal);
+            vec3 activeNormal = normalize(mix(
+              normal,
+              bentNormal,
+              bendMix
+            ));
+            vNormalView = normalize(normalMatrix * activeNormal);
             vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
             gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
           }
@@ -2672,11 +3431,10 @@
             }
             float axialDepth = pow(clamp(vUv.y, 0.0, 1.0), .72);
             vec3 surfaceNormal = normalize(vNormalView);
-            if (!gl_FrontFacing) surfaceNormal = -surfaceNormal;
-            float diffuse = max(
-              dot(surfaceNormal, normalize(lightDirection)),
-              0.0
-            );
+            float diffuse = abs(dot(
+              surfaceNormal,
+              normalize(lightDirection)
+            ));
             float wallFacing = abs(dot(
               surfaceNormal,
               vec3(0.0, 0.0, 1.0)
@@ -2701,15 +3459,36 @@
         new THREE.Vector3(0, 1, 0)
       );
       const spawnDiameterScale = .435 / mouthRadius;
-      const expandedDiameterScale = .59 + Math.random() * .0725;
-      const expandedHeightScale = .58 + Math.random() * .12;
-      const diameterBreath = .008 + Math.random() * .009;
-      const heightBreath = .008 + Math.random() * .012;
-      const sizeMotionRate = .52 + Math.random() * .42;
+      const expandedDiameterScale = .626;
+      const expandedHeightScale = .5725;
+      const breathStrength = random() < .2
+        ? .25
+        : .65 + random() * .35;
+      const diameterBreath = (
+        (.022 + random() * .022) * breathStrength
+      );
+      const heightBreath = (
+        (.009 + random() * .012) * breathStrength
+      );
+      const sizeMotionRate = .78 + random() * .52;
+      const topBendEnabled = profile.ba > 0 && random() < .62;
+      const immediateTopBend = (
+        topBendEnabled && random() < .22
+      );
+      // Additional shader expansion would silently change the defined profile.
+      const apertureExpansionBase = 0;
+      const aperturePulseStrength = (
+        (.032 + random() * .029) * breathStrength
+      );
+      const idleBendStrength = (
+        .09 + random() * .11
+      );
+      const idleBendRate = .34 + random() * .34;
+      const idleBendPhase = random() * Math.PI * 2;
 
       group.userData = {
         mat, innerMat, entryLight, mouth, throat, spawn: 0, pulse: 0, hit: false,
-        seed: Math.random() * 10,
+        seed: random() * 10,
         aperturePitchMotion,
         apertureYawMotion,
         apertureRollMotion,
@@ -2717,11 +3496,38 @@
         stemMotionRate,
         stemMotionAmplitude,
         stemMotionPhase,
+        stemMotionDirection,
         tubePoint: curvePoint,
+        bentTubePoint: bentCurvePoint,
         closedY: closedYAt,
         closedMouthY: closedYAt(1, endPosition.y),
         mouthPosition: endPosition.clone(),
+        straightMouthPosition: new THREE.Vector3(0, coneHeight, 0),
+        mouthRadius,
+        shapeVariation: profileIndex + 1,
+        shapeRatios: {
+          name: profile.name,
+          s1r: profile.s1r,
+          s1h: profile.s1h,
+          s2r: profile.s2r,
+          s2h: profile.s2h,
+          s3r: profile.s3r,
+          s3er: profile.s3er,
+          oc: profile.oc,
+          or: profile.or,
+          orY: profile.orY,
+          bh: profile.bh,
+          ba: profile.ba,
+          bo: profile.bo,
+          orB: profile.orB
+        },
+        tubeRadius: pathV => {
+          return radiusAt(pathV);
+        },
         mouthBaseQuaternion: bellOrientation.clone(),
+        bentMouthQuaternion: profile.orB
+          ? orientationAt(1, bentCurvePoint(1))
+          : bellOrientation.clone(),
         uprightMouthQuaternion,
         spawnDiameterScale,
         expandedDiameterScale,
@@ -2729,7 +3535,32 @@
         diameterBreath,
         heightBreath,
         sizeMotionRate,
-        spawnDepth: endPosition.y * expandedHeightScale,
+        spawnDepth: coneHeight * expandedHeightScale,
+        topBendPivot,
+        topBendAxis,
+        bendHeight: profile.bh,
+        bendAngle: THREE.MathUtils.degToRad(profile.ba),
+        bendOffset: THREE.MathUtils.degToRad(profile.bo),
+        bendAffectsOrientation: profile.orB,
+        idleBendStrength,
+        idleBendRate,
+        idleBendPhase,
+        currentTopBend: 0,
+        topBendEnabled,
+        topBendActive: false,
+        topBendStartAge: 0,
+        topBendRiseDuration: 0,
+        topBendHoldDuration: 0,
+        topBendFallDuration: 0,
+        topBendPeak: 0,
+        nextTopBendAge: immediateTopBend
+          ? .12 + random() * .42
+          : 3.5 + random() * 18,
+        apertureExpansionBase,
+        aperturePulseStrength,
+        aperturePulseRate: .52 + random() * .36,
+        aperturePulsePhase: random() * Math.PI * 2,
+        currentApertureExpansion: 0,
         retreat: 0,
         closeProgress: 0,
         diameterClose: 0,
@@ -2745,47 +3576,191 @@
       return group;
     }
 
+    function bendConePoint(cone, point, pathV, bend = null) {
+      const data = cone.userData;
+      const angle = bend ?? data.currentTopBend;
+      if (Math.abs(angle) < .0001 || data.bendAngle < .0001) return point;
+      const bendMix = THREE.MathUtils.clamp(
+        angle / data.bendAngle,
+        0,
+        1
+      );
+      const baseCurve = data.tubePoint(pathV);
+      const bentCurve = data.bentTubePoint(pathV);
+      point.x += (bentCurve.x - baseCurve.x) * bendMix;
+      point.y += (bentCurve.y - baseCurve.y) * bendMix;
+      point.z += (bentCurve.z - baseCurve.z) * bendMix;
+      return point;
+    }
+
+    function coneLifeOffset(cone, pathV, target = new THREE.Vector3()) {
+      const data = cone.userData;
+      const motionTime = clock.elapsedTime + data.seed;
+      const weights = [
+        THREE.MathUtils.smoothstep(pathV, .06, .42),
+        THREE.MathUtils.smoothstep(pathV, .32, .72),
+        THREE.MathUtils.smoothstep(pathV, .66, 1)
+      ];
+      target.set(0, 0, 0);
+      for (let i = 0; i < 3; i++) {
+        const motion = (
+          Math.sin(
+            motionTime * data.stemMotionRate.getComponent(i)
+              + data.stemMotionPhase.getComponent(i)
+          )
+          * data.stemMotionAmplitude.getComponent(i)
+          * weights[i]
+        );
+        const direction = data.stemMotionDirection.getComponent(i);
+        target.x += Math.cos(direction) * motion;
+        target.z += Math.sin(direction) * motion;
+      }
+      return target;
+    }
+
+    function updateConeMouthTransform(cone, straighten = 0) {
+      const data = cone.userData;
+      const bentPosition = bendConePoint(
+        cone,
+        data.mouthPosition.clone(),
+        1
+      );
+      data.mouth.position.lerpVectors(
+        bentPosition,
+        data.straightMouthPosition,
+        straighten
+      );
+      if (!data.hit && !data.accepting && !data.reserved) {
+        data.mouth.position.addScaledVector(
+          coneLifeOffset(cone, 1),
+          (1 - straighten) * (1 - data.currentClosing)
+        );
+      }
+      if (data.bendAffectsOrientation) {
+        const bendMix = data.bendAngle > .0001
+          ? THREE.MathUtils.clamp(
+              data.currentTopBend / data.bendAngle,
+              0,
+              1
+            )
+          : 0;
+        data.mouth.quaternion.copy(data.mouthBaseQuaternion)
+          .slerp(data.bentMouthQuaternion, bendMix);
+      } else {
+        data.mouth.quaternion.copy(data.mouthBaseQuaternion);
+      }
+      data.mouth.quaternion.slerp(
+        data.uprightMouthQuaternion,
+        straighten
+      );
+      data.entryLight.position.copy(data.mouth.position);
+    }
+
     function coneMouthCenter(cone) {
-      return cone.userData.mouthPosition.clone()
+      return cone.userData.mouth.position.clone()
         .multiply(cone.scale)
         .applyQuaternion(cone.quaternion)
         .add(cone.position);
     }
 
+    const apertureHitPlane = new THREE.Plane();
+    const apertureHitPoint = new THREE.Vector3();
+    const apertureWorldCenter = new THREE.Vector3();
+    const apertureWorldQuaternion = new THREE.Quaternion();
+    const apertureWorldNormal = new THREE.Vector3();
+    const apertureLocalHit = new THREE.Vector3();
+    const apertureInverseQuaternion = new THREE.Quaternion();
+
+    function reticleApertureScore(cone) {
+      cone.updateWorldMatrix(true, true);
+      cone.userData.mouth.getWorldPosition(apertureWorldCenter);
+      cone.userData.mouth.getWorldQuaternion(apertureWorldQuaternion);
+      apertureWorldNormal
+        .set(0, 0, 1)
+        .applyQuaternion(apertureWorldQuaternion)
+        .normalize();
+      apertureHitPlane.setFromNormalAndCoplanarPoint(
+        apertureWorldNormal,
+        apertureWorldCenter
+      );
+      if (!raycaster.ray.intersectPlane(
+        apertureHitPlane,
+        apertureHitPoint
+      )) {
+        return Infinity;
+      }
+      apertureLocalHit.copy(apertureHitPoint);
+      cone.worldToLocal(apertureLocalHit);
+      apertureLocalHit.sub(cone.userData.mouth.position);
+      apertureInverseQuaternion
+        .copy(cone.userData.mouth.quaternion)
+        .invert();
+      apertureLocalHit.applyQuaternion(apertureInverseQuaternion);
+      const visibleRadius = (
+        cone.userData.mouthRadius
+        * (1 + cone.userData.currentApertureExpansion)
+      );
+      return Math.hypot(
+        apertureLocalHit.x,
+        apertureLocalHit.y
+      ) / visibleRadius;
+    }
+
+    const holeScreenCenter = new THREE.Vector3();
+    const holeScreenX = new THREE.Vector3();
+    const holeScreenZ = new THREE.Vector3();
+
+    function reticleHoleScore(cone, reticleNdc) {
+      holeScreenCenter.set(cone.position.x, 0, cone.position.z);
+      holeScreenX.set(
+        cone.position.x + holeRadius,
+        0,
+        cone.position.z
+      );
+      holeScreenZ.set(
+        cone.position.x,
+        0,
+        cone.position.z + holeRadius
+      );
+      board.localToWorld(holeScreenCenter).project(camera);
+      board.localToWorld(holeScreenX).project(camera);
+      board.localToWorld(holeScreenZ).project(camera);
+      const basisXX = holeScreenX.x - holeScreenCenter.x;
+      const basisXY = holeScreenX.y - holeScreenCenter.y;
+      const basisZX = holeScreenZ.x - holeScreenCenter.x;
+      const basisZY = holeScreenZ.y - holeScreenCenter.y;
+      const deltaX = reticleNdc.x - holeScreenCenter.x;
+      const deltaY = reticleNdc.y - holeScreenCenter.y;
+      const determinant = basisXX * basisZY - basisXY * basisZX;
+      if (Math.abs(determinant) < .000001) return Infinity;
+      const localX = (
+        deltaX * basisZY - deltaY * basisZX
+      ) / determinant;
+      const localZ = (
+        basisXX * deltaY - basisXY * deltaX
+      ) / determinant;
+      return Math.hypot(localX, localZ);
+    }
+
     function coneTubeCenter(cone, pathV) {
       const curve = cone.userData.tubePoint(pathV);
-      const shaderTime = clock.elapsedTime + cone.userData.seed;
-      const motionRate = cone.userData.stemMotionRate;
-      const motionAmplitude = cone.userData.stemMotionAmplitude;
-      const motionPhase = cone.userData.stemMotionPhase;
-      const anchored = Math.sin(pathV * Math.PI);
       const straighten = THREE.MathUtils.clamp(
         cone.userData.closeProgress,
         0,
         1
       );
+      const motionStrength = (
+        (1 - straighten) * (1 - cone.userData.currentClosing)
+      );
       const point = new THREE.Vector3(
-        curve.x
-          + (
-            Math.sin(
-              shaderTime * 1.5 * motionRate.x
-                + motionPhase.x
-                + pathV * 5
-            ) * motionAmplitude.x
-            + Math.sin(
-              shaderTime * 2.1 * motionRate.y
-                + motionPhase.y
-                + pathV * 8
-            ) * motionAmplitude.y
-          ) * anchored,
+        curve.x,
         curve.y,
         curve.z
-          + Math.cos(
-            shaderTime * 1.25 * motionRate.z
-              + motionPhase.z
-              + pathV * 6
-          ) * motionAmplitude.z * anchored
+      ).addScaledVector(
+        coneLifeOffset(cone, pathV),
+        motionStrength
       );
+      bendConePoint(cone, point, pathV);
       point.lerp(new THREE.Vector3(0, curve.y, 0), straighten);
       point.y = THREE.MathUtils.lerp(
         point.y,
@@ -2796,6 +3771,75 @@
         .multiply(cone.scale)
         .applyQuaternion(cone.quaternion)
         .add(cone.position);
+    }
+
+    const coneAvoidancePath = [.38, .52, .66, .78, .9, 1];
+
+    function keepMeanderingDiscsClearOfCones(discs) {
+      const liveCones = state.targets.filter(
+        cone => !cone.userData.hit && !cone.userData.accepting && cone.visible
+      );
+      discs.forEach(disc => {
+        const discRadius = .79 * disc.userData.baseScale + .08;
+        liveCones.forEach(cone => {
+          const coneScale = Math.max(cone.scale.x, cone.scale.z);
+          coneAvoidancePath.forEach(pathV => {
+            const center = coneTubeCenter(cone, pathV);
+            const coneRadius = cone.userData.tubeRadius(pathV) * coneScale;
+            const solidRadius = discRadius + coneRadius;
+            const safetyRadius = solidRadius + .3;
+            const verticalDistance = Math.abs(disc.position.y - center.y);
+            if (verticalDistance >= safetyRadius) return;
+
+            let dx = disc.position.x - center.x;
+            let dz = disc.position.z - center.z;
+            let planarDistance = Math.hypot(dx, dz);
+            const safePlanarDistance = Math.sqrt(
+              Math.max(
+                0,
+                safetyRadius * safetyRadius
+                  - verticalDistance * verticalDistance
+              )
+            );
+            if (planarDistance >= safePlanarDistance) return;
+            if (planarDistance < .001) {
+              dx = -disc.userData.velocity.y;
+              dz = disc.userData.velocity.x;
+              planarDistance = Math.hypot(dx, dz) || 1;
+            }
+            const normal = new THREE.Vector2(
+              dx / planarDistance,
+              dz / planarDistance
+            );
+            const solidPlanarDistance = Math.sqrt(
+              Math.max(
+                0,
+                solidRadius * solidRadius
+                  - verticalDistance * verticalDistance
+              )
+            );
+            if (planarDistance < solidPlanarDistance) {
+              const correction = solidPlanarDistance - planarDistance + .025;
+              disc.position.x += normal.x * correction;
+              disc.position.z += normal.y * correction;
+            }
+            const inwardSpeed = disc.userData.velocity.dot(normal);
+            if (inwardSpeed < 0) {
+              disc.userData.velocity.addScaledVector(
+                normal,
+                -inwardSpeed * 1.35
+              );
+            }
+            const proximity = 1 - planarDistance / safePlanarDistance;
+            disc.userData.velocity.addScaledVector(
+              normal,
+              proximity * .065
+            );
+          });
+        });
+        disc.position.x = THREE.MathUtils.clamp(disc.position.x, -4.45, 4.45);
+        disc.position.z = THREE.MathUtils.clamp(disc.position.z, 2.05, 3.8);
+      });
     }
 
     function coneMouthNormal(cone) {
@@ -2851,27 +3895,20 @@
       cone.userData.mat.uniforms.closing.value = closing;
       cone.userData.innerMat.uniforms.straighten.value = straighten;
       cone.userData.innerMat.uniforms.closing.value = closing;
-      cone.userData.mouth.position.lerpVectors(
-        cone.userData.mouthPosition,
-        new THREE.Vector3(0, cone.userData.mouthPosition.y, 0),
-        straighten
-      );
+      updateConeMouthTransform(cone, straighten);
       cone.userData.mouth.position.y = THREE.MathUtils.lerp(
         cone.userData.mouth.position.y,
         cone.userData.closedMouthY,
         closing
       );
-      cone.userData.mouth.quaternion
-        .copy(cone.userData.mouthBaseQuaternion)
-        .slerp(cone.userData.uprightMouthQuaternion, straighten);
       cone.userData.entryLight.position.copy(cone.userData.mouth.position);
       cone.userData.mouth.scale.set(1, .82, 1);
       return remaining;
     }
 
     const discBaseScale = .65;
-    const discRiseDuration = 1.05;
-    const discEmergenceDuration = 1.22;
+    const discRiseDuration = .58;
+    const discEmergenceDuration = .72;
 
     function makeDisc() {
       const group = new THREE.Group();
@@ -2976,6 +4013,8 @@
     }
     reticle.visible = false;
     board.add(reticle);
+    let visibleAimDestination = null;
+    let visibleAimSelection = null;
 
     const aimLineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
     const aimLine = new THREE.Line(aimLineGeo, new THREE.LineDashedMaterial({
@@ -3141,9 +4180,9 @@
     function message(text, toneName = '') {
       ui.message.textContent = text;
       ui.message.dataset.tone = toneName;
-      clearTimeout(messageTimer);
+      clock.cancel(messageTimer);
       if (toneName) {
-        messageTimer = setTimeout(() => {
+        messageTimer = scheduleGame(() => {
           ui.message.textContent = state.playing ? 'Hold to focus · just let go' : text;
           ui.message.dataset.tone = '';
         }, 1400);
@@ -3151,12 +4190,18 @@
     }
 
     function clearObjects() {
-      state.targets.forEach(target => board.remove(target));
+      clock.clear();
+      state.charging = false;
+      visibleAimDestination = null;
+      visibleAimSelection = null;
+      reticle.visible = false;
+      aimLine.visible = false;
+      state.targets.forEach(disposeGameObject);
       state.targets = [];
-      state.discs.forEach(disc => board.remove(disc));
+      state.discs.forEach(disposeGameObject);
       state.discs = [];
       state.activeDisc = null;
-      state.flights.forEach(flight => board.remove(flight.disc));
+      state.flights.forEach(flight => disposeGameObject(flight.disc));
       state.flights = [];
       state.generation++;
       state.discSerial = 0;
@@ -3343,6 +4388,10 @@
       return Math.sin(progress * Math.PI) * (
         1 + skew * (progress * 2 - 1)
       );
+    }
+
+    function acceleratingFlightProgress(progress, strength = .34) {
+      return progress * (1 - strength + strength * progress);
     }
 
     function horizontalFlightPoint(start, end, normal, side, skew, progress) {
@@ -3547,7 +4596,7 @@
     }
 
     function spawnCone(delay = 0, generation = state.generation) {
-      setTimeout(() => {
+      scheduleGame(() => {
         if (!state.playing || state.transitioning || generation !== state.generation) return;
         const capacity = Math.min(state.levelQuota, 3);
         const liveCount = state.targets.filter(target => !target.userData.hit).length;
@@ -3559,7 +4608,9 @@
           }
           return;
         }
-        const cone = makeCone();
+        const cone = makeCone({
+          spawnX: chosen.h.group.position.x
+        });
         cone.position.copy(chosen.h.group.position);
         cone.position.y = -cone.userData.spawnDepth;
         cone.userData.holeIndex = chosen.i;
@@ -3572,7 +4623,7 @@
     }
 
     function spawnDisc(delay = 0, generation = state.generation) {
-      setTimeout(() => {
+      scheduleGame(() => {
         if (!state.playing || state.transitioning || generation !== state.generation) return;
         const capacity = Math.min(state.levelQuota, 3);
         const presentCount = state.discs.length + state.flights.length;
@@ -3630,7 +4681,57 @@
       }
     }
 
-    function resetGame() {
+    let pendingGameAction = null;
+    let confirmationReturnFocus = null;
+
+    function closeActionConfirmation({ restoreFocus = true } = {}) {
+      state.confirmationOpen = false;
+      ui.actionConfirm.hidden = true;
+      pendingGameAction = null;
+      if (restoreFocus) confirmationReturnFocus?.focus();
+      confirmationReturnFocus = null;
+    }
+
+    function requestActionConfirmation(action, sourceButton) {
+      if (!state.started || state.confirmationOpen) return;
+      pendingGameAction = action;
+      confirmationReturnFocus = sourceButton;
+      state.confirmationOpen = true;
+      state.charging = false;
+      setSettingsOpen(false);
+      const restarting = action === 'restart';
+      ui.actionConfirmTitle.textContent = restarting
+        ? 'Restart game?'
+        : 'Exit game?';
+      ui.actionConfirmCopy.textContent = restarting
+        ? 'Current level progress and score will be reset.'
+        : 'Current progress will be recorded and the game will close.';
+      ui.actionConfirmAccept.textContent = restarting ? 'Restart' : 'Exit';
+      ui.actionConfirm.hidden = false;
+      ui.actionConfirmCancel.focus();
+      requestAnimationFrame(() => {
+        if (state.confirmationOpen && !ui.actionConfirm.contains(document.activeElement)) {
+          ui.actionConfirmCancel.focus();
+        }
+      });
+    }
+
+    function acceptActionConfirmation() {
+      const action = pendingGameAction;
+      closeActionConfirmation({ restoreFocus: false });
+      if (action === 'restart') void resetGame();
+      else if (action === 'exit') exitGame();
+    }
+
+    let resetRequest = 0;
+    async function resetGame() {
+      const request = ++resetRequest;
+      ui.burst.classList.remove('active');
+      state.playing = false;
+      clearObjects();
+      const profiles = await loadConeShapeProfiles();
+      if (request !== resetRequest || !state.started) return;
+      coneShapeProfiles = profiles;
       useSpaceEnvironment();
       state.level = 1;
       state.score = 0;
@@ -3649,19 +4750,25 @@
       }
     }
 
-    function startGame(mode = 'classic') {
+    async function startGame(mode = 'classic') {
       state.mode = mode;
       state.started = true;
-      state.playing = true;
       setSettingsOpen(false);
+      document.activeElement?.blur();
       document.body.classList.remove('home-active');
       ui.startOverlay.hidden = true;
       ui.endOverlay.hidden = true;
       tone(105, .75, 'sine', .04, 230);
-      resetGame();
+      await resetGame();
     }
 
-    function startLevel47Shortcut() {
+    async function startLevel47Shortcut() {
+      const request = ++resetRequest;
+      state.playing = false;
+      clearObjects();
+      const profiles = await loadConeShapeProfiles();
+      if (request !== resetRequest) return;
+      coneShapeProfiles = profiles;
       useSpaceEnvironment();
       clearObjects();
       state.mode = 'classic';
@@ -3681,6 +4788,7 @@
       state.levelQuota = 47;
       state.levelConesIssued = 0;
       setSettingsOpen(false);
+      document.activeElement?.blur();
       document.body.classList.remove('home-active');
       ui.startOverlay.hidden = true;
       ui.endOverlay.hidden = true;
@@ -3705,19 +4813,127 @@
       return origin.addScaledVector(dir, distance).setY(.12);
     }
 
+    function selectShotTarget(destination) {
+      let target = null;
+      let closest = Infinity;
+      let reservedTarget = null;
+      let closestReserved = Infinity;
+      let nearMissCone = null;
+      let closestNearMiss = Infinity;
+      const launchOrigin = state.activeDisc.position.clone();
+      const launchDirection = destination.clone().sub(launchOrigin).setY(0).normalize();
+      const launchLength = destination.distanceTo(launchOrigin);
+      scene.updateMatrixWorld(true);
+      const reticleNdc = board.localToWorld(destination.clone())
+        .project(camera);
+      raycaster.setFromCamera(reticleNdc, camera);
+      state.targets.forEach(cone => {
+        // Emerging cones are intentionally eligible as soon as they exist.
+        if (cone.userData.hit) return;
+        const baseDistance = Math.hypot(
+          destination.x - cone.position.x,
+          destination.z - cone.position.z
+        );
+        const targetRadius = THREE.MathUtils.clamp(
+          cone.userData.mouthRadius
+            * Math.max(cone.scale.x, cone.scale.z)
+            * (1 + cone.userData.currentApertureExpansion)
+            + .16,
+          holeRadius + .1,
+          holeRadius + .22
+        );
+        // The cone's visible mouth can be well away from its board cell after
+        // yaw, pitch, OC, stem motion, or hinging. Test the pointer ray against
+        // that actual oriented aperture before using the forgiving board-space
+        // radius as a fallback.
+        const apertureScore = reticleApertureScore(cone);
+        const directApertureHit = apertureScore <= 1.12;
+        const holeScore = reticleHoleScore(cone, reticleNdc);
+        // Evaluate the projected red circle exactly as it appears on screen.
+        // This removes the perspective/parallax bias caused by comparing the
+        // elevated reticle with a target only in board-space coordinates.
+        const directHoleHit = holeScore <= 1.28;
+        const selectionScore = directApertureHit
+          ? apertureScore * targetRadius
+          : directHoleHit
+            ? holeScore * holeRadius
+            : baseDistance;
+        if (cone.userData.reserved) {
+          if (
+            (
+              directApertureHit
+              || directHoleHit
+              || baseDistance < targetRadius
+            )
+            && selectionScore < closestReserved
+          ) {
+            closestReserved = selectionScore;
+            reservedTarget = cone;
+          }
+          return;
+        }
+        const d = baseDistance;
+        if (
+          (directApertureHit || directHoleHit || d < targetRadius)
+          && selectionScore < closest
+        ) {
+          closest = selectionScore;
+          target = cone;
+        }
+        const coneDirection = cone.position.clone().sub(launchOrigin).setY(0);
+        if (coneDirection.lengthSq() > .001) {
+          const projection = coneDirection.dot(launchDirection);
+          const perpendicular = coneDirection.clone()
+            .addScaledVector(launchDirection, -projection)
+            .length();
+          const nearMissScore = d + perpendicular * .35;
+          if (
+            d >= targetRadius &&
+            d < 2.05 &&
+            perpendicular < .88 &&
+            projection > 0 &&
+            projection < launchLength + 1.05 &&
+            nearMissScore < closestNearMiss
+          ) {
+            closestNearMiss = nearMissScore;
+            nearMissCone = cone;
+          }
+        }
+      });
+      return { target, reservedTarget, nearMissCone };
+    }
+
     function updateAim() {
       if (
         !state.playing ||
         state.transitioning ||
         state.settingsOpen ||
+        state.confirmationOpen ||
         !state.activeDisc
       ) {
         reticle.visible = false;
         aimLine.visible = false;
+        visibleAimDestination = null;
+        visibleAimSelection = null;
+        stage.dataset.aim = 'neutral';
         return;
       }
       const destination = getAimDestination();
       if (!destination) return;
+      destination.y = .1 + Math.sin(clock.elapsedTime * 3) * .015;
+      visibleAimDestination = destination.clone();
+      visibleAimSelection = selectShotTarget(destination);
+      const willHit = state.charging && Boolean(visibleAimSelection.target);
+      const committed = state.charging && !willHit && Boolean(visibleAimSelection.reservedTarget);
+      stage.dataset.aim = willHit ? 'hit' : committed ? 'committed' : 'neutral';
+      reticleRing.material.color.setHex(willHit ? 0xc4fff0 : committed ? 0xffce86 : 0xffa08c);
+      aimLine.material.color.setHex(willHit ? 0xb2eede : 0xff6c4e);
+      reticle.children.slice(1).forEach(mark => {
+        const radius = willHit ? .42 : .49;
+        mark.position.x = Math.cos(mark.rotation.z) * radius;
+        mark.position.z = Math.sin(mark.rotation.z) * radius;
+        mark.material.opacity = willHit ? 1 : .65;
+      });
       reticle.visible = true;
       reticle.position.copy(destination);
       const s = .75 + state.charge * .45;
@@ -3734,10 +4950,16 @@
     }
 
     function beginCharge(event) {
-      if (!state.playing || state.settingsOpen || !state.activeDisc || state.transitioning) return;
+      if (
+        !state.playing
+        || state.settingsOpen
+        || state.confirmationOpen
+        || !state.activeDisc
+        || state.transitioning
+      ) return;
       if (event?.button !== undefined && event.button !== 0) return;
       state.charging = true;
-      state.chargeStart = performance.now();
+      state.chargeStart = clock.elapsedTime;
       state.charge = .04;
       state.pointerDownId = event?.pointerId ?? null;
       if (event?.pointerId !== undefined) {
@@ -3749,46 +4971,26 @@
 
     function launch() {
       if (!state.charging || !state.activeDisc) return;
-      const destination = getAimDestination();
+      // Launch exactly where the last rendered reticle was shown. Pointer-up can
+      // carry a slightly newer coordinate than the final painted frame.
+      const destination = visibleAimDestination?.clone()
+        ?? getAimDestination();
       state.charging = false;
       state.pointerDownId = null;
       if (!destination) return;
 
-      let target = null;
-      let closest = 1.02;
-      let nearMissCone = null;
-      let closestNearMiss = Infinity;
+      const { target, reservedTarget, nearMissCone } = visibleAimSelection
+        ?? selectShotTarget(destination);
+      visibleAimSelection = null;
       const launchOrigin = state.activeDisc.position.clone();
-      const launchDirection = destination.clone().sub(launchOrigin).setY(0).normalize();
-      const launchLength = destination.distanceTo(launchOrigin);
-      state.targets.forEach(cone => {
-        if (
-          cone.userData.hit
-          || cone.userData.reserved
-          || clock.elapsedTime - cone.userData.spawn < coneSpawnDuration
-        ) return;
-        const d = new THREE.Vector2(destination.x - cone.position.x, destination.z - cone.position.z).length();
-        if (d < closest) { closest = d; target = cone; }
-        const coneDirection = cone.position.clone().sub(launchOrigin).setY(0);
-        if (coneDirection.lengthSq() > .001) {
-          const projection = coneDirection.dot(launchDirection);
-          const perpendicular = coneDirection.clone()
-            .addScaledVector(launchDirection, -projection)
-            .length();
-          const nearMissScore = d + perpendicular * .35;
-          if (
-            d >= closest &&
-            d < 2.05 &&
-            perpendicular < .88 &&
-            projection > 0 &&
-            projection < launchLength + 1.05 &&
-            nearMissScore < closestNearMiss
-          ) {
-            closestNearMiss = nearMissScore;
-            nearMissCone = cone;
-          }
-        }
-      });
+      if (!target && reservedTarget) {
+        state.charge = .04;
+        visibleAimDestination = null;
+        reticle.visible = false;
+        aimLine.visible = false;
+        message('Cone already committed');
+        return;
+      }
       if (target) {
         target.userData.reserved = true;
         target.userData.retreatBaseScale = target.scale.clone();
@@ -3838,7 +5040,7 @@
         target,
         progress: 0,
         duration: target
-          ? 3.2 + (1 - state.charge) * .5
+          ? 2.12 + (1 - state.charge) * .32
           : 1.12 + (1 - state.charge) * .48,
         curveNormal,
         curveLift: target
@@ -3854,9 +5056,11 @@
         startScale: launchedDisc.scale.x,
         entryQuaternion: null,
         targetEntryDirection: target ? coneEntryDirection(target) : null,
-        missHoleIndex: missHole?.index ?? null
+        missHoleIndex: missHole?.index ?? null,
+        avoidanceOffset: new THREE.Vector3()
       });
       state.charge = .04;
+      visibleAimDestination = null;
       updateSceneMetrics();
       reticle.visible = false;
       aimLine.visible = false;
@@ -3916,8 +5120,66 @@
         .addScaledVector(p2, 3 * inverse * progress * progress)
         .addScaledVector(p3, progress * progress * progress);
     }
+
+    function applyReleasedDiscSeparation(flights, dt) {
+      const active = flights.filter(flight => (
+        flight.target
+          ? flight.progress < coneEntryStart * .94
+          : flight.progress < .96
+      ));
+      const desiredOffsets = new Map(
+        active.map(flight => [flight, new THREE.Vector3()])
+      );
+      const minimumDistance = 1.02;
+
+      for (let i = 0; i < active.length; i++) {
+        for (let j = i + 1; j < active.length; j++) {
+          const a = active[i];
+          const b = active[j];
+          const delta = a.disc.position.clone().sub(b.disc.position);
+          let distance = delta.length();
+          if (distance >= minimumDistance) continue;
+          if (distance < .001) {
+            delta.set(
+              Math.sin(a.disc.id * 1.7),
+              .55,
+              Math.cos(b.disc.id * 1.3)
+            );
+            distance = delta.length();
+          }
+          const correction = Math.min(
+            .56,
+            (minimumDistance - distance) * .58 + .045
+          );
+          delta.multiplyScalar(1 / distance);
+          desiredOffsets.get(a).addScaledVector(delta, correction);
+          desiredOffsets.get(b).addScaledVector(delta, -correction);
+        }
+      }
+
+      active.forEach(flight => {
+        const targetOffset = desiredOffsets.get(flight);
+        if (targetOffset.lengthSq() > .36) targetOffset.setLength(.6);
+        flight.avoidanceOffset.lerp(
+          targetOffset,
+          1 - Math.exp(-14 * dt)
+        );
+        const fade = flight.target
+          ? 1 - THREE.MathUtils.smoothstep(
+              flight.progress,
+              coneEntryStart * .72,
+              coneEntryStart * .94
+            )
+          : 1 - THREE.MathUtils.smoothstep(flight.progress, .78, .96);
+        flight.disc.position.addScaledVector(
+          flight.avoidanceOffset,
+          fade
+        );
+      });
+    }
+
     function resolveFlight(flight) {
-      board.remove(flight.disc);
+      disposeGameObject(flight.disc);
       state.flights = state.flights.filter(activeFlight => activeFlight !== flight);
       if (flight.target) {
         const target = flight.target;
@@ -3940,9 +5202,9 @@
           'hit'
         );
         tone(440, .16, 'sine', .04, 330);
-        setTimeout(() => tone(660, .35, 'sine', .028, 280), 100);
-        setTimeout(() => {
-          board.remove(target);
+        scheduleGame(() => tone(660, .35, 'sine', .028, 280), 100);
+        scheduleGame(() => {
+          disposeGameObject(target);
           state.targets = state.targets.filter(t => t !== target);
           updateSceneMetrics();
           if (levelCleared) completeLevel();
@@ -3961,7 +5223,7 @@
           updateHUD();
           message("Just let go. Relax... You'll do it. · 5 second penalty", 'miss');
           if (state.timeRemaining <= 0) {
-            setTimeout(expireTimedGame, 450);
+            scheduleGame(expireTimedGame, 450);
           } else {
             spawnDisc(randomDelay(420, 1500), state.generation);
           }
@@ -3970,7 +5232,7 @@
           updateHUD();
           message("Just let go. Relax... You'll do it.", 'miss');
           if (state.tries <= 0) {
-            setTimeout(gameOver, 650);
+            scheduleGame(gameOver, 650);
           } else {
             spawnDisc(randomDelay(420, 1500), state.generation);
           }
@@ -3979,13 +5241,14 @@
     }
 
     function completeLevel() {
+      if (!state.playing || state.transitioning) return;
       state.transitioning = true;
       const completedLevel = state.level;
       state.score += 25 * state.level;
       updateHUD();
       message(`Level ${state.level} cleared`, 'hit');
       tone(320, .75, 'sine', .035, 500);
-      setTimeout(() => {
+      scheduleGame(() => {
         state.level++;
         if (completedLevel === 46) {
           state.levelHits = 0;
@@ -4006,6 +5269,7 @@
     }
 
     function gameOver() {
+      if (!state.playing) return;
       state.playing = false;
       recordHighScore();
       clearObjects();
@@ -4019,7 +5283,7 @@
     }
 
     function expireTimedGame() {
-      if (state.timerExpired || state.mode !== 'timed') return;
+      if (!state.playing || state.timerExpired || state.mode !== 'timed') return;
       state.timerExpired = true;
       state.timeRemaining = 0;
       state.displayedTime = 0;
@@ -4040,6 +5304,9 @@
 
     function exitGame() {
       if (!state.started || ui.burst.classList.contains('active')) return;
+      const exitRequest = ++resetRequest;
+      clock.clear();
+      state.generation++;
       state.playing = false;
       state.charging = false;
       setSettingsOpen(false);
@@ -4052,8 +5319,12 @@
       void ui.burst.offsetWidth;
       ui.burst.classList.add('active');
       tone(70, 1.35, 'sawtooth', .035, 760);
-      setTimeout(() => ui.burst.classList.remove('active'), 1850);
-      setTimeout(finishExit, 1750);
+      setTimeout(() => {
+        if (exitRequest === resetRequest) ui.burst.classList.remove('active');
+      }, 1850);
+      setTimeout(() => {
+        if (exitRequest === resetRequest) finishExit();
+      }, 1750);
     }
 
     function updatePointer(event) {
@@ -4124,6 +5395,14 @@
     }
 
     addEventListener('keydown', event => {
+      if (preview.active) return;
+      if (state.confirmationOpen && event.key === 'Tab') {
+        event.preventDefault();
+        const next = document.activeElement === ui.actionConfirmCancel
+          ? ui.actionConfirmAccept : ui.actionConfirmCancel;
+        next.focus();
+        return;
+      }
       if (captureHomeCode(event)) {
         event.preventDefault();
         return;
@@ -4133,15 +5412,22 @@
         return;
       }
       if (event.code === 'Space') {
+        if (event.target.closest?.('button, input, select, textarea, a, [contenteditable]')) return;
         event.preventDefault();
         if (!event.repeat) beginCharge();
       } else if (event.code === 'Escape') {
-        if (state.settingsOpen) setSettingsOpen(false);
-        else exitGame();
+        if (state.confirmationOpen) closeActionConfirmation();
+        else if (state.settingsOpen) setSettingsOpen(false);
+        else {
+          requestActionConfirmation(
+            'exit',
+            document.querySelector('#exitButton')
+          );
+        }
       }
     });
     addEventListener('keyup', event => {
-      if (event.code === 'Space') {
+      if (event.code === 'Space' && state.charging) {
         event.preventDefault();
         launch();
       }
@@ -4151,8 +5437,19 @@
     document.querySelector('#timedButton').addEventListener('click', () => startGame('timed'));
     document.querySelector('#againButton').addEventListener('click', () => startGame(state.mode));
     document.querySelector('#homeButton').addEventListener('click', exitGame);
-    document.querySelector('#restartButton').addEventListener('click', resetGame);
-    document.querySelector('#exitButton').addEventListener('click', exitGame);
+    document.querySelector('#restartButton').addEventListener('click', event => {
+      requestActionConfirmation('restart', event.currentTarget);
+    });
+    document.querySelector('#exitButton').addEventListener('click', event => {
+      requestActionConfirmation('exit', event.currentTarget);
+    });
+    ui.actionConfirmCancel.addEventListener('click', () => {
+      closeActionConfirmation();
+    });
+    ui.actionConfirmAccept.addEventListener('click', acceptActionConfirmation);
+    ui.actionConfirm.addEventListener('click', event => {
+      if (event.target === ui.actionConfirm) closeActionConfirmation();
+    });
     ui.classicScoresReset.addEventListener('click', () => {
       requestScoreReset('classic', ui.classicScoresReset);
     });
@@ -4169,6 +5466,7 @@
       settings.boardAngle = Number(ui.angleSetting.value);
       ui.angleOutput.textContent = `${String(settings.boardAngle).replace('-', '−')}°`;
       applyBoardAngle();
+      configureCamera();
       saveSettings();
     });
     ui.zoomSetting.addEventListener('input', () => {
@@ -4200,9 +5498,14 @@
       if (!state.muted) tone(330, .15, 'sine', .025, 80);
     });
 
+    document.addEventListener('visibilitychange', () => {
+      lastFrameTime = performance.now();
+      state.charging = false;
+    });
+
     addEventListener('resize', () => {
       if (!state.liftTransition) configureCamera();
-      renderer.setSize(innerWidth, innerHeight);
+      renderer.setSize(stage.clientWidth, stage.clientHeight);
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
       const liftPixelRatio = Math.min(devicePixelRatio, 2);
       liftViewCamera.aspect = innerWidth / innerHeight;
@@ -4213,9 +5516,92 @@
       );
     });
 
-    function animate() {
-      requestAnimationFrame(animate);
-      const dt = Math.min(clock.getDelta(), .04);
+    function posePreviewCone(cone) {
+      const data = cone.userData;
+      const time = clock.elapsedTime;
+      data.currentTopBend = data.bendAngle * preview.bend / 100;
+      cone.scale.set(data.expandedDiameterScale, data.expandedHeightScale, data.expandedDiameterScale);
+      cone.rotation.set(
+        Math.sin(time * data.apertureMotionRate.x + data.seed * 1.27) * data.aperturePitchMotion,
+        Math.sin(time * data.apertureMotionRate.y + data.seed) * data.apertureYawMotion,
+        Math.sin(time * data.apertureMotionRate.z + data.seed * 1.43) * data.apertureRollMotion
+      );
+      updateConeMouthTransform(cone);
+      data.mouth.scale.set(1, .82, 1);
+      for (const material of [data.mat, data.innerMat]) {
+        material.uniforms.time.value = time + data.seed;
+        material.uniforms.topBend.value = data.currentTopBend;
+        material.uniforms.straighten.value = 0;
+      }
+      document.querySelector('#previewBendOutput').textContent =
+        `${THREE.MathUtils.radToDeg(data.currentTopBend).toFixed(1)}°`;
+    }
+
+    function rebuildConePreview() {
+      clearObjects();
+      clock.elapsedTime = 0;
+      const seedInput = document.querySelector('#previewSeed');
+      const seed = Math.min(4294967295, Math.max(0, Math.trunc(Number(seedInput.value) || 0)));
+      seedInput.value = String(seed);
+      const cone = makeCone({
+        typeIndex: Number(document.querySelector('#previewType').value),
+        random: seededRandom(seed),
+        varyShape: document.querySelector('#previewVariation').checked
+      });
+      board.add(cone);
+      state.targets.push(cone);
+      posePreviewCone(cone);
+      const bendControl = document.querySelector('#previewBend');
+      bendControl.disabled = cone.userData.bendAngle === 0;
+    }
+
+    function populatePreviewTypes() {
+      const select = document.querySelector('#previewType');
+      const previous = select.selectedOptions[0]?.textContent;
+      select.replaceChildren(...coneShapeProfiles.map((profile, index) => {
+        const option = new Option(profile.name, String(index));
+        option.selected = profile.name === previous;
+        return option;
+      }));
+      if (select.selectedIndex < 0) select.selectedIndex = 0;
+    }
+
+    function initializeConePreview() {
+      document.querySelector('#conePreview').hidden = false;
+      state.scoreEligible = false;
+      settings.boardAngle = 0;
+      applyBoardAngle();
+      configureCamera();
+      field.visible = false;
+      holes.forEach(hole => { hole.group.visible = false; });
+      populatePreviewTypes();
+      rebuildConePreview();
+      for (const id of ['previewType', 'previewSeed', 'previewVariation']) {
+        document.querySelector(`#${id}`).addEventListener('change', rebuildConePreview);
+      }
+      document.querySelector('#previewBend').addEventListener('input', event => {
+        preview.bend = Number(event.target.value);
+        state.targets.forEach(posePreviewCone);
+      });
+      document.querySelector('#previewMotion').addEventListener('click', event => {
+        preview.paused = !preview.paused;
+        lastFrameTime = performance.now();
+        event.currentTarget.textContent = preview.paused ? 'Play motion' : 'Pause motion';
+        event.currentTarget.setAttribute('aria-pressed', String(!preview.paused));
+      });
+      document.querySelector('#previewReload').addEventListener('click', async event => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+          coneShapeProfiles = await loadConeShapeProfiles();
+          populatePreviewTypes();
+          rebuildConePreview();
+        } finally { button.disabled = false; }
+      });
+    }
+
+    function updateSimulation(dt, realDt) {
+      clock.advance(dt);
       const time = clock.elapsedTime;
 
       updateLiftTransition(time);
@@ -4227,7 +5613,7 @@
         state.mode === 'timed' &&
         !state.timerExpired
       ) {
-        state.timeRemaining = Math.max(0, state.timeRemaining - dt);
+        state.timeRemaining = Math.max(0, state.timeRemaining - realDt);
         const displayedTime = Math.ceil(state.timeRemaining);
         if (displayedTime !== state.displayedTime) {
           state.displayedTime = displayedTime;
@@ -4262,6 +5648,7 @@
       });
 
       state.targets.forEach(cone => {
+        if (preview.active) return;
         const data = cone.userData;
         const age = Math.max(0, time - data.spawn);
         const spawnProgress = Math.min(1, age / coneSpawnDuration);
@@ -4271,7 +5658,11 @@
           .26,
           1
         );
-        const bendIn = THREE.MathUtils.smoothstep(spawnProgress, .2, 1);
+        const bendIn = THREE.MathUtils.smoothstep(
+          spawnProgress,
+          .2,
+          1
+        );
         const sizePhase = time * data.sizeMotionRate + data.seed * 1.71;
         const diameterScale = data.expandedDiameterScale * (
           1 + Math.sin(sizePhase) * data.diameterBreath * bendIn
@@ -4279,6 +5670,97 @@
         const heightScale = data.expandedHeightScale * (
           1 + Math.sin(sizePhase * .73 + 1.2) * data.heightBreath * bendIn
         );
+        if (spawnProgress < 1) {
+          data.currentTopBend = 0;
+          data.currentApertureExpansion = (
+            data.apertureExpansionBase * bendIn
+          );
+        } else if (!data.hit && !data.accepting && !data.reserved) {
+          const idleArrival = THREE.MathUtils.smoothstep(
+            age,
+            coneSpawnDuration,
+            coneSpawnDuration + .9
+          );
+          const idleBend = (
+            data.bendAngle
+            * data.idleBendStrength
+            * (
+              .5 + Math.sin(
+                age * data.idleBendRate + data.idleBendPhase
+              ) * .5
+            )
+            * idleArrival
+          );
+          if (
+            data.topBendEnabled
+            && !data.topBendActive
+            && age >= data.nextTopBendAge
+          ) {
+            data.topBendActive = true;
+            data.topBendStartAge = age;
+            data.topBendRiseDuration = 1.35 + Math.random() * .9;
+            data.topBendHoldDuration = Math.random() < .42
+              ? 3.2 + Math.random() * 4.8
+              : .85 + Math.random() * 1.35;
+            data.topBendFallDuration = 1.45 + Math.random() * 1.05;
+            data.topBendPeak = data.bendAngle;
+            // BO is relative to OR-Y. The precomputed axis therefore bends in
+            // the aperture heading at BO 0, with signed offsets around it.
+          }
+          if (data.topBendActive) {
+            const bendElapsed = age - data.topBendStartAge;
+            const holdStart = data.topBendRiseDuration;
+            const fallStart = holdStart + data.topBendHoldDuration;
+            const bendEnd = fallStart + data.topBendFallDuration;
+            if (bendElapsed >= bendEnd) {
+              data.topBendActive = false;
+              data.currentTopBend = idleBend;
+              data.nextTopBendAge = age + 9 + Math.random() * 26;
+            } else if (bendElapsed < holdStart) {
+              data.currentTopBend = THREE.MathUtils.lerp(
+                idleBend,
+                data.topBendPeak,
+                THREE.MathUtils.smoothstep(
+                  bendElapsed,
+                  0,
+                  holdStart
+                )
+              );
+            } else if (bendElapsed < fallStart) {
+              data.currentTopBend = data.topBendPeak;
+            } else {
+              data.currentTopBend = THREE.MathUtils.lerp(
+                idleBend,
+                data.topBendPeak,
+                (
+                  1 - THREE.MathUtils.smoothstep(
+                    bendElapsed,
+                    fallStart,
+                    bendEnd
+                  )
+                )
+              );
+            }
+          } else {
+            data.currentTopBend = idleBend;
+          }
+          const apertureBreath = (
+            Math.sin(
+              age * data.aperturePulseRate
+                + data.aperturePulsePhase
+            ) * .72
+            + Math.sin(
+              age * data.aperturePulseRate * .47
+                + data.aperturePulsePhase * 1.31
+            ) * .28
+          );
+          data.currentApertureExpansion = (
+            data.apertureExpansionBase
+            + apertureBreath
+              * data.aperturePulseStrength
+              * idleArrival
+          );
+        }
         if (!data.hit && !data.accepting) {
           if (spawnProgress < 1) {
             const horizontalGrowth = THREE.MathUtils.lerp(
@@ -4308,15 +5790,7 @@
             const spawnStraighten = 1 - bendIn;
             data.mat.uniforms.straighten.value = spawnStraighten;
             data.innerMat.uniforms.straighten.value = spawnStraighten;
-            data.mouth.position.lerpVectors(
-              new THREE.Vector3(0, data.mouthPosition.y, 0),
-              data.mouthPosition,
-              bendIn
-            );
-            data.mouth.quaternion
-              .copy(data.uprightMouthQuaternion)
-              .slerp(data.mouthBaseQuaternion, bendIn);
-            data.entryLight.position.copy(data.mouth.position);
+            updateConeMouthTransform(cone, spawnStraighten);
           } else if (!data.reserved) {
             cone.position.y = 0;
             cone.scale.set(
@@ -4335,9 +5809,7 @@
             ) * data.apertureRollMotion;
             data.mat.uniforms.straighten.value = 0;
             data.innerMat.uniforms.straighten.value = 0;
-            data.mouth.position.copy(data.mouthPosition);
-            data.mouth.quaternion.copy(data.mouthBaseQuaternion);
-            data.entryLight.position.copy(data.mouth.position);
+            updateConeMouthTransform(cone, 0);
           }
           data.mouth.scale.set(1, .82, 1);
         } else {
@@ -4349,6 +5821,16 @@
         data.innerMat.uniforms.time.value = time + data.seed;
         data.mat.uniforms.pulse.value = data.pulse;
         data.innerMat.uniforms.pulse.value = data.pulse;
+        data.mat.uniforms.topBend.value = data.currentTopBend;
+        data.innerMat.uniforms.topBend.value = data.currentTopBend;
+        data.mat.uniforms.topBendAxis.value.copy(data.topBendAxis);
+        data.innerMat.uniforms.topBendAxis.value.copy(data.topBendAxis);
+        data.mat.uniforms.apertureExpansion.value = (
+          data.currentApertureExpansion
+        );
+        data.innerMat.uniforms.apertureExpansion.value = (
+          data.currentApertureExpansion
+        );
         data.entryLight.intensity = data.pulse * 3.2;
       });
 
@@ -4449,21 +5931,16 @@
           * wanderBlend
         );
       });
+      keepMeanderingDiscsClearOfCones(movingDiscs);
 
       if (state.charging) {
-        const elapsed = (performance.now() - state.chargeStart) / 1450;
+        const elapsed = (clock.elapsedTime - state.chargeStart) / 1.45;
         const phase = elapsed % 2;
         const triangle = phase <= 1 ? phase : 2 - phase;
         state.charge = .04 + triangle * .96;
         if (state.activeDisc) {
           state.activeDisc.scale.setScalar(state.activeDisc.userData.baseScale * (1 + state.charge * .075));
         }
-      }
-
-      updateAim();
-      if (reticle.visible) {
-        reticle.rotation.y = time * .7;
-        reticle.position.y = .1 + Math.sin(time * 3) * .015;
       }
 
       state.flights.slice().forEach(f => {
@@ -4473,15 +5950,23 @@
         if (f.target) {
           if (p <= entryStart) {
             const approach = p / entryStart;
-            const preEntry = THREE.MathUtils.smoothstep(approach, .52, 1);
-            placeOnTargetFlightCurve(f, approach);
+            const acceleratedApproach = acceleratingFlightProgress(
+              approach,
+              .32
+            );
+            const preEntry = THREE.MathUtils.smoothstep(
+              acceleratedApproach,
+              .52,
+              1
+            );
+            placeOnTargetFlightCurve(f, acceleratedApproach);
             f.disc.scale.setScalar(f.startScale * (1 - preEntry * .4));
             f.spinPhase += f.spinSpeed * dt;
             f.disc.quaternion.copy(f.launchQuaternion);
             f.disc.rotateOnAxis(f.spinAxis, f.spinPhase);
             f.disc.quaternion.slerp(
               f.entryTargetQuaternion,
-              THREE.MathUtils.smoothstep(approach, .34, 1)
+              THREE.MathUtils.smoothstep(acceleratedApproach, .34, 1)
             );
           } else {
             const entryRaw = Math.min(
@@ -4520,32 +6005,54 @@
             f.target.userData.accepting = true;
             f.target.userData.retreat = retreatRaw;
             const remaining = applyConeRetreat(f.target, retreatRaw);
-            f.disc.position.copy(coneTubeCenter(f.target, tubePathV));
+            f.disc.position.copy(
+              coneTubeCenter(f.target, tubePathV)
+            );
             const insertedScale = THREE.MathUtils.lerp(.6, .085, insertion);
             f.disc.scale.setScalar(f.startScale * insertedScale * remaining);
             f.disc.quaternion.copy(f.entryQuaternion);
           }
         } else {
-          placeOnFlightCurve(f, f.end, p);
-          applyLiveConeAvoidance(f, p);
+          const acceleratedFlight = acceleratingFlightProgress(p, .38);
+          placeOnFlightCurve(f, f.end, acceleratedFlight);
+          applyLiveConeAvoidance(f, acceleratedFlight);
           f.disc.rotateOnAxis(f.spinAxis, f.spinSpeed * dt);
-        }
-        if (!f.target && p > .84) {
-          const sink = THREE.MathUtils.smoothstep(p, .84, 1);
-          f.disc.scale.setScalar(
-            f.disc.userData.baseScale
-              * THREE.MathUtils.lerp(1, .035, sink)
-          );
+          if (acceleratedFlight > .84) {
+            const sink = THREE.MathUtils.smoothstep(
+              acceleratedFlight,
+              .84,
+              1
+            );
+            f.disc.scale.setScalar(
+              f.disc.userData.baseScale
+                * THREE.MathUtils.lerp(1, .035, sink)
+            );
+          }
         }
         if (p >= 1) resolveFlight(f);
       });
+      applyReleasedDiscSeparation(state.flights, dt);
 
-      if (!state.liftTransition && !boardInLift) {
+      if (!preview.active && !state.liftTransition && !boardInLift) {
         const driftX = pointer.x * .28;
         camera.position.x += (driftX - camera.position.x) * .012;
         camera.rotation.z += (-pointer.x * .006 - camera.rotation.z) * .02;
       }
       key.position.x = -5 + Math.sin(time * .18) * 2;
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const now = performance.now();
+      const realDt = Math.max(0, (now - lastFrameTime) / 1000);
+      lastFrameTime = now;
+      const paused = state.confirmationOpen || state.settingsOpen || document.hidden
+        || (preview.active && preview.paused) || (!preview.active && state.started && !state.playing);
+      const dt = Math.min(realDt, .04);
+      if (!paused) updateSimulation(dt, realDt);
+      if (preview.active) state.targets.forEach(cone => posePreviewCone(cone));
+      updateAim();
+      if (reticle.visible) reticle.rotation.y = clock.elapsedTime * .7;
 
       if (boardInLift && !state.liftTransition) {
         const previousBackground = scene.background;
@@ -4573,6 +6080,7 @@
 
     updateHUD();
     renderHighScores();
+    if (preview.active) initializeConePreview();
     animate();
   </script>
 </body>
